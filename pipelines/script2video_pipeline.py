@@ -11,7 +11,7 @@ from agents import *
 import yaml
 from interfaces import *
 from langchain.chat_models import init_chat_model
-from tools.render_backend import RenderBackend
+from tools.render_backend import RenderBackend, _load_dotenv, _substitute_env_vars
 from utils.provider_presets import resolve_chat_model_config
 
 class Script2VideoPipeline:
@@ -46,20 +46,57 @@ class Script2VideoPipeline:
 
 
     @classmethod
-    def init_from_config(cls, config_path: str):
+    def init_from_config(
+        cls,
+        config_path: str,
+        working_dir_override: Optional[str] = None,
+    ):
+        """Build a pipeline from a YAML config.
+
+        Args:
+            config_path: Path to the YAML config file.
+            working_dir_override: If set, overrides ``config["working_dir"]``.
+                Used by the orchestrator bridge for per-job isolation so
+                concurrent triggers don't collide on the same working dir.
+                The directory is created (exist_ok=True) in __init__.
+        """
+        # Source ViMax's .env into os.environ BEFORE anything else — chat_model
+        # and other secrets are referenced as ${VAR} in the YAML and must be
+        # available for substitution. _load_dotenv does NOT override existing
+        # env vars (env wins over file), so the orchestrator bridge can still
+        # inject keys via the subprocess environment.
+        _load_dotenv()
+
         with open(config_path, "r") as f:
             config = yaml.safe_load(f)
 
-        chat_model_args = resolve_chat_model_config(config["chat_model"]["init_args"])
+        # Apply ${VAR} substitution to chat_model init_args BEFORE init_chat_model.
+        # The chat_model is constructed here, NOT via _instantiate, so the
+        # substitution that runs inside RenderBackend.from_config never touches
+        # it. Without this, init_chat_model receives the literal "${ZAI_API_KEY}"
+        # string as api_key and z.ai returns "401 token expired or incorrect".
+        chat_model_args = _substitute_env_vars(config["chat_model"]["init_args"])
+        chat_model_args = resolve_chat_model_config(chat_model_args)
         chat_model = init_chat_model(**chat_model_args)
-        backend = RenderBackend.from_config(config)
+        backend = RenderBackend.from_config(
+            config,
+            chat_model=chat_model,
+            working_dir_override=working_dir_override,
+        )
 
-        return cls(
+        pipeline = cls(
             chat_model=chat_model,
             image_generator=backend.image_generator,
             video_generator=backend.video_generator,
-            working_dir=config["working_dir"],
+            working_dir=working_dir_override or config["working_dir"],
         )
+
+        # If the chat model is text-only (e.g. z.ai Coding Plan endpoint),
+        # disable the multimodal vision pass in the reference image selector.
+        if config.get("chat_model", {}).get("text_only"):
+            pipeline.reference_image_selector.text_only = True
+
+        return pipeline
 
     async def __call__(
         self,
@@ -272,6 +309,7 @@ class Script2VideoPipeline:
                 frame_desc=shot_descriptions[first_shot_idx].lf_desc,
                 visible_characters=[characters[idx] for idx in shot_descriptions[first_shot_idx].lf_vis_char_idxs],
                 character_portraits_registry=character_portraits_registry,
+                variation_type=shot_descriptions[first_shot_idx].variation_type,
             )
             normal_tasks.append(task)
 
@@ -283,6 +321,7 @@ class Script2VideoPipeline:
                     frame_desc=shot_descriptions[shot_idx].ff_desc,
                     visible_characters=[characters[idx] for idx in shot_descriptions[shot_idx].ff_vis_char_idxs],
                     character_portraits_registry=character_portraits_registry,
+                    variation_type=shot_descriptions[shot_idx].variation_type,
                 )
             if shot_idx in priority_shot_idxs:
                 priority_tasks.append(first_frame_task)
@@ -298,6 +337,7 @@ class Script2VideoPipeline:
                     frame_desc=shot_descriptions[shot_idx].lf_desc,
                     visible_characters=[characters[idx] for idx in shot_descriptions[shot_idx].lf_vis_char_idxs],
                     character_portraits_registry=character_portraits_registry,
+                    variation_type=shot_descriptions[shot_idx].variation_type,
                 )
                 normal_tasks.append(last_frame_task)
 
@@ -328,6 +368,13 @@ class Script2VideoPipeline:
             video_output = await self.video_generator.generate_single_video(
                 prompt=shot_description.motion_desc + "\n" + shot_description.audio_desc,
                 reference_image_paths=frame_paths,
+                # Structured metadata for smart routing (local LTX vs paid API):
+                # - variation_type drives large-variation escalation
+                # - audio_desc drives lipsync escalation
+                # - motion_desc drives complex-motion heuristic fallback
+                variation_type=shot_description.variation_type,
+                audio_desc=shot_description.audio_desc,
+                motion_desc=shot_description.motion_desc,
             )
             video_output.save(video_path)
             print(f"☑️ Generated video for shot {shot_description.idx}, saved to {video_path}.")
@@ -340,6 +387,7 @@ class Script2VideoPipeline:
         frame_desc: str,
         visible_characters: List[CharacterInScene],
         character_portraits_registry: Dict[str, Dict[str, Dict[str, str]]],
+        variation_type: Optional[str] = None,
     ) -> ImageOutput:
 
         frame_image_path = os.path.join(self.working_dir, "shots", f"{shot_idx}", f"{frame_type}.png")
@@ -380,10 +428,17 @@ class Script2VideoPipeline:
             prompt = f"{prefix_prompt}\n{prompt}"
             reference_image_paths = [item[0] for item in reference_image_path_and_text_pairs]
 
+            # Pass structured metadata for smart routing (multi-model router):
+            # - visible_characters drives multi-char → Ideogram bbox routing
+            # - frame_desc is the input to CompositionPlanner
+            # - shot_notes gives the planner framing context
             frame_image: ImageOutput = await self.image_generator.generate_single_image(
                 prompt=prompt,
                 reference_image_paths=reference_image_paths,
                 size="1600x900",
+                visible_characters=visible_characters,
+                frame_desc=frame_desc,
+                shot_notes=f"Shot {shot_idx}, {frame_type} frame. Variation: {variation_type or 'unknown'}.",
             )
             frame_image.save(frame_image_path)
             print(f"☑️ Generated {frame_type} frame for shot {shot_idx}, saved to {frame_image_path}.")
