@@ -1,0 +1,13 @@
+# Marella Lewis x Victory KDD Cleaning testimonial.
+working_dir: projects/marella_victory_kdd/working_dir
+character_trigger: marella
+
+# Per-model character LoRAs (preferred over legacy character_lora).
+# The seed script and router pick the LoRA that matches the chosen backend's model.
+character_loras:
+  qwen: qwen/marella_qwen2512_v1.safetensors
+  flux: flux/marella_lewis_000002600.safetensors
+  ideogram: ideogram4/marella_ideogram_v4_v2.safetensors
+
+# Legacy single-LoRA field (kept for backward compat; character_loras takes precedence).
+character_lora: qwen/marella_qwen2512_v1.safetensors

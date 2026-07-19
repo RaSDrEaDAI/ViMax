@@ -1,0 +1,119 @@
+# Hybrid local-first config for idea2video. Mirrors script2video_local.yaml.
+#
+# Same multi-model image router + 3-gate video escalation router.
+
+chat_model:
+  init_args:
+    model: claude-opus-4-1-20250805
+    model_provider: anthropic
+    api_key: ${ANTHROPIC_API_KEY}
+    max_tokens: 8192          # Anthropic requires explicit max_tokens; 8K is ample for all ViMax agents
+    temperature: 0.7          # slightly creative for story/screenplay; agents that need determinism override locally
+  max_requests_per_minute: 40   # Anthropic Opus tier limits; ViMax rarely exceeds 20 concurrent
+  max_requests_per_day: 2000
+  # No text_only flag — Claude supports vision natively, so ReferenceImageSelector
+  # uses the multimodal path directly (no separate vision_chat_model needed).
+
+
+# Vision LLM — RETIRED 2026-07-18. Claude Opus 4.1 handles vision natively.
+# The Gemini-via-fal VisionModelClient is no longer needed for CompositionPlanner.
+# Section kept commented for reference; uncomment to restore the separate vision path.
+#
+# vision_chat_model:
+#   class_path: tools.vision_model.VisionModelClient
+#   init_args:
+#     api_key: ${FAL_API_KEY}
+#     model: google/gemini-2.5-flash
+#     endpoint: https://fal.run/fal-ai/any-llm
+#     timeout: 60
+#   max_requests_per_minute: 20
+
+
+image_generator:
+  class_path: tools.ImageGeneratorRouter
+  init_args:
+    default_backend: qwen
+    # ── Routing flags (2026-07-18) ──────────────────────────────────────
+    # Qwen 2512 FIXED: was using wrong text encoder (gemma_3_12B, 3840-dim).
+    #   Qwen-Image expects 3584-dim → qwen_2.5_vl_7b_fp8_scaled. Workflow patched.
+    # Z-image Turbo FIXED: workflow was structurally wrong — using generic
+    #   CLIPLoader + qwen_image_vae, but Z-image is pixel-space. Correct recipe
+    #   per ComfyUI's official blueprint: qwen_3_4b encoder (lumina2 type),
+    #   ae.safetensors VAE, ModelSamplingAuraFlow shift=3, res_multistep sampler.
+    route_portraits_to_qwen: true
+    route_text_to_qwen: true
+    route_environments_to_zimage: true
+    route_multiref_to_qwen_edit: true
+    multiref_threshold: 1  # single-ref shots also use Qwen Edit (don\'t drop refs)
+    flux_backend:
+      class_path: tools.ImageGeneratorComfyUI
+      init_args:
+        base_url: http://127.0.0.1:8189
+        t2i_workflow: workflows/flux1_dev_t2i_lora.json
+        i2i_workflow: workflows/flux1_kontext_i2i.json
+      max_requests_per_minute: 12
+    qwen_backend:
+      class_path: tools.ImageGeneratorComfyUI
+      init_args:
+        base_url: http://127.0.0.1:8189
+        t2i_workflow: workflows/qwen2512_t2i.json
+      max_requests_per_minute: 8
+    zimage_backend:
+      class_path: tools.ImageGeneratorComfyUI
+      init_args:
+        base_url: http://127.0.0.1:8189
+        t2i_workflow: workflows/zimage_turbo_t2i.json
+      max_requests_per_minute: 15
+    qwen_edit_backend:
+      class_path: tools.ImageGeneratorComfyUI
+      init_args:
+        base_url: http://127.0.0.1:8189
+        i2i_workflow: workflows/qwen_edit_2511_multiref.json
+      max_requests_per_minute: 6
+    ideogram_backend:
+      class_path: tools.ImageGeneratorComfyUI
+      init_args:
+        base_url: http://127.0.0.1:8189  # direct (local model, free)
+        t2i_workflow: workflows/ideogram_v4_json.json
+      max_requests_per_minute: 8
+    composition_planner:
+      class_path: agents.composition_planner.CompositionPlanner
+      init_args:
+        chat_model: "${chat_model}"
+        vision_model: "${vision_model}"
+    route_multichar_to_ideogram: true
+    route_text_to_qwen: true
+    route_environments_to_zimage: true
+    route_multiref_to_qwen_edit: true
+    multiref_threshold: 1  # single-ref shots also use Qwen Edit (don\'t drop refs)
+    route_portraits_to_qwen: true
+
+
+video_generator:
+  class_path: tools.VideoGeneratorRouter
+  init_args:
+    default_route: local
+    local_backend:
+      class_path: tools.VideoGeneratorComfyUI
+      init_args:
+        base_url: http://127.0.0.1:8189
+        i2v_workflow: workflows/ltx23_i2v.json
+        flf2v_workflow: workflows/ltx23_flf2v.json
+        t2v_workflow: workflows/ltx23_t2v.json
+      max_requests_per_minute: 10
+    escalation_backend:
+      class_path: tools.VideoGeneratorFalAI
+      init_args:
+        api_key: ${FAL_API_KEY}
+        t2v_model: fal-ai/veo3/fast
+        ff2v_model: fal-ai/veo3/fast/image-to-video
+      max_requests_per_minute: 5
+      max_requests_per_day: 50
+    escalate_on_lipsync: false
+    escalate_on_multiref: false
+    escalate_on_large_variation: false
+    escalate_on_high_complexity: false
+    retry_escalation_on_local_failure: false
+
+
+working_dir: .working_dir/idea2video
