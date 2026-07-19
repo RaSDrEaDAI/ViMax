@@ -9,7 +9,7 @@ import json
 from moviepy import VideoFileClip, concatenate_videoclips
 import yaml
 from langchain.chat_models import init_chat_model
-from tools.render_backend import RenderBackend
+from tools.render_backend import RenderBackend, _load_dotenv, _substitute_env_vars
 from utils.provider_presets import resolve_chat_model_config
 
 
@@ -34,19 +34,45 @@ class Idea2VideoPipeline:
             image_generator=self.image_generator)
 
     @classmethod
-    def init_from_config(cls, config_path: str):
+    def init_from_config(
+        cls,
+        config_path: str,
+        working_dir_override: Optional[str] = None,
+    ):
+        """Build a pipeline from a YAML config.
+
+        Args:
+            config_path: Path to the YAML config file.
+            working_dir_override: If set, overrides ``config["working_dir"]``.
+                Used by the orchestrator bridge for per-job isolation so
+                concurrent triggers don't collide on the same working dir.
+        """
+        # Source ViMax's .env into os.environ BEFORE anything else — chat_model
+        # and other secrets are referenced as ${VAR} in the YAML and must be
+        # available for substitution. _load_dotenv does NOT override existing
+        # env vars (env wins over file).
+        _load_dotenv()
+
         with open(config_path, "r") as f:
             config = yaml.safe_load(f)
 
-        chat_model_args = resolve_chat_model_config(config["chat_model"]["init_args"])
+        # Apply ${VAR} substitution to chat_model init_args BEFORE init_chat_model.
+        # Without this, init_chat_model receives the literal "${ZAI_API_KEY}"
+        # string as api_key and z.ai returns "401 token expired or incorrect".
+        chat_model_args = _substitute_env_vars(config["chat_model"]["init_args"])
+        chat_model_args = resolve_chat_model_config(chat_model_args)
         chat_model = init_chat_model(**chat_model_args)
-        backend = RenderBackend.from_config(config)
+        backend = RenderBackend.from_config(
+            config,
+            chat_model=chat_model,
+            working_dir_override=working_dir_override,
+        )
 
         return cls(
             chat_model=chat_model,
             image_generator=backend.image_generator,
             video_generator=backend.video_generator,
-            working_dir=config["working_dir"],
+            working_dir=working_dir_override or config["working_dir"],
         )
 
     async def extract_characters(
@@ -198,6 +224,7 @@ class Idea2VideoPipeline:
         idea: str,
         user_requirement: str,
         style: str,
+        reference_image_urls: Optional[List[str]] = None,
     ):
 
         story = await self.develop_story(idea=idea, user_requirement=user_requirement)
@@ -229,6 +256,7 @@ class Idea2VideoPipeline:
                 style=style,
                 characters=characters,
                 character_portraits_registry=character_portraits_registry,
+                reference_image_urls=reference_image_urls,
             )
             all_video_paths.append(final_video_path)
 

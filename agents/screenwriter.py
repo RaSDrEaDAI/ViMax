@@ -7,6 +7,8 @@ from langchain.chat_models import init_chat_model
 from pydantic import BaseModel, Field
 from tenacity import retry, stop_after_attempt
 
+from utils.prompting_guide import build_video_prompt_context
+
 
 
 system_prompt_template_develop_story = \
@@ -119,16 +121,30 @@ class Screenwriter:
     def __init__(
         self,
         chat_model: str,
+        video_model_name: Optional[str] = "LTX 2.3",
     ):
         self.chat_model = chat_model
+        # Load the prompting guide for the target video model so shot
+        # descriptions (motion_desc, ff_desc, lf_desc) are written in the
+        # model's native prompt vocabulary. Fail-soft: empty string if the
+        # guide CSV is missing or the model name isn't in it.
+        self._video_prompt_context = ""
+        if video_model_name:
+            self._video_prompt_context = build_video_prompt_context(video_model_name)
 
     async def develop_story(
         self,
         idea: str,
         user_requirement: Optional[str] = None,
     ) -> str:
+        # Append the video-model prompting guide so the story is written with
+        # the target video model's vocabulary in mind (shot types, camera
+        # grammar, lighting, FACS). Empty string if no guide loaded.
+        system = system_prompt_template_develop_story
+        if self._video_prompt_context:
+            system = system + "\n\n[VIDEO MODEL PROMPTING GUIDE]\n" + self._video_prompt_context
         messages = [
-            ("system", system_prompt_template_develop_story),
+            ("system", system),
             ("human", human_prompt_template_develop_story.format(idea=idea, user_requirement=user_requirement)),
         ]
         response = await self.chat_model.ainvoke(messages)
@@ -152,8 +168,13 @@ class Screenwriter:
         parser = PydanticOutputParser(pydantic_object=WriteScriptBasedOnStoryResponse)
         format_instructions = parser.get_format_instructions()
 
+        # Append the video-model prompting guide so shot descriptions
+        # (motion_desc, ff_desc, lf_desc) are written in LTX-native vocabulary.
+        system = system_prompt_template_write_script_based_on_story.format(format_instructions=format_instructions)
+        if self._video_prompt_context:
+            system = system + "\n\n[VIDEO MODEL PROMPTING GUIDE — write motion_desc, ff_desc, lf_desc following this guide]\n" + self._video_prompt_context
         messages = [
-            ("system", system_prompt_template_write_script_based_on_story.format(format_instructions=format_instructions)),
+            ("system", system),
             ("human", human_prompt_template_write_script_based_on_story.format(story=story, user_requirement=user_requirement)),
         ]
         response = await self.chat_model.ainvoke(messages)

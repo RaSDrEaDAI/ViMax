@@ -105,6 +105,7 @@ class Script2VideoPipeline:
         style: str,
         characters: List[CharacterInScene] = None,
         character_portraits_registry: Optional[Dict[str, Dict[str, Dict[str, str]]]] = None,
+        reference_image_urls: Optional[List[str]] = None,
     ):
         if characters is None:
             characters = await self.extract_characters(script=script)
