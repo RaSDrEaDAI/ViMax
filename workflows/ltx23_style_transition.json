@@ -1,29 +1,11 @@
 {
-  "31": {
-    "inputs": {
-      "image": "high_view_classic_car.png"
-    },
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "Load First Frame"
-    }
-  },
-  "39": {
-    "inputs": {
-      "image": "low_view_classic_car.png"
-    },
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "Load Last Frame"
-    }
-  },
   "68": {
     "inputs": {
       "filename_prefix": "video/ltx2.3_flf2v",
       "format": "auto",
       "codec": "auto",
       "video": [
-        "218",
+        "167",
         0
       ]
     },
@@ -32,11 +14,29 @@
       "title": "Save Video"
     }
   },
-  "195": {
+  "137": {
+    "inputs": {
+      "image": "ltx23_flf2v_last_frame.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image"
+    }
+  },
+  "138": {
+    "inputs": {
+      "image": "ltx23_flf2v_first_frame.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image"
+    }
+  },
+  "145": {
     "inputs": {
       "img_compression": 25,
       "image": [
-        "214",
+        "163",
         0
       ]
     },
@@ -45,28 +45,28 @@
       "title": "LTXVPreprocess"
     }
   },
-  "196": {
+  "146": {
     "inputs": {
-      "noise_seed": 315253765879496
+      "noise_seed": 767871932424233
     },
     "class_type": "RandomNoise",
     "_meta": {
       "title": "RandomNoise"
     }
   },
-  "197": {
+  "147": {
     "inputs": {
       "frames_number": [
-        "226",
+        "177",
         1
       ],
       "frame_rate": [
-        "205",
+        "154",
         0
       ],
       "batch_size": 1,
       "audio_vae": [
-        "224",
+        "173",
         0
       ]
     },
@@ -75,20 +75,11 @@
       "title": "LTXV Empty Latent Audio"
     }
   },
-  "198": {
-    "inputs": {
-      "value": 5
-    },
-    "class_type": "PrimitiveInt",
-    "_meta": {
-      "title": "Duration"
-    }
-  },
-  "199": {
+  "148": {
     "inputs": {
       "img_compression": 25,
       "image": [
-        "213",
+        "162",
         0
       ]
     },
@@ -97,18 +88,18 @@
       "title": "LTXVPreprocess"
     }
   },
-  "200": {
+  "149": {
     "inputs": {
       "positive": [
-        "204",
+        "153",
         0
       ],
       "negative": [
-        "204",
+        "153",
         1
       ],
       "latent": [
-        "221",
+        "170",
         0
       ]
     },
@@ -117,18 +108,18 @@
       "title": "LTXVCropGuides"
     }
   },
-  "201": {
+  "150": {
     "inputs": {
       "width": [
-        "203",
+        "152",
         0
       ],
       "height": [
-        "203",
+        "152",
         1
       ],
       "length": [
-        "226",
+        "177",
         1
       ],
       "batch_size": 1
@@ -138,18 +129,18 @@
       "title": "EmptyLTXVLatentVideo"
     }
   },
-  "202": {
+  "151": {
     "inputs": {
       "frame_rate": [
-        "212",
+        "161",
         0
       ],
       "positive": [
-        "222",
+        "171",
         0
       ],
       "negative": [
-        "217",
+        "166",
         0
       ]
     },
@@ -158,10 +149,10 @@
       "title": "LTXVConditioning"
     }
   },
-  "203": {
+  "152": {
     "inputs": {
       "image": [
-        "213",
+        "162",
         0
       ]
     },
@@ -170,28 +161,28 @@
       "title": "Get Image Size"
     }
   },
-  "204": {
+  "153": {
     "inputs": {
       "frame_idx": -1,
       "strength": 0.7,
       "positive": [
-        "206",
+        "155",
         0
       ],
       "negative": [
-        "206",
+        "155",
         1
       ],
       "vae": [
-        "223",
+        "172",
         2
       ],
       "latent": [
-        "206",
+        "155",
         2
       ],
       "image": [
-        "195",
+        "145",
         0
       ]
     },
@@ -200,7 +191,7 @@
       "title": "LTXVAddGuide"
     }
   },
-  "205": {
+  "154": {
     "inputs": {
       "value": 25
     },
@@ -209,28 +200,28 @@
       "title": "Frame Rate(int)"
     }
   },
-  "206": {
+  "155": {
     "inputs": {
       "frame_idx": 0,
       "strength": 0.7,
       "positive": [
-        "202",
+        "151",
         0
       ],
       "negative": [
-        "202",
+        "151",
         1
       ],
       "vae": [
-        "223",
+        "172",
         2
       ],
       "latent": [
-        "201",
+        "150",
         0
       ],
       "image": [
-        "199",
+        "148",
         0
       ]
     },
@@ -239,19 +230,19 @@
       "title": "LTXVAddGuide"
     }
   },
-  "207": {
+  "156": {
     "inputs": {
       "cfg": 1,
       "model": [
-        "223",
+        "175",
         0
       ],
       "positive": [
-        "204",
+        "153",
         0
       ],
       "negative": [
-        "204",
+        "153",
         1
       ]
     },
@@ -260,7 +251,7 @@
       "title": "CFGGuider"
     }
   },
-  "208": {
+  "157": {
     "inputs": {
       "eta": 0,
       "s_noise": 1
@@ -270,7 +261,7 @@
       "title": "SamplerEulerAncestral"
     }
   },
-  "209": {
+  "158": {
     "inputs": {
       "sigmas": "1., 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0"
     },
@@ -279,14 +270,14 @@
       "title": "ManualSigmas"
     }
   },
-  "210": {
+  "159": {
     "inputs": {
       "video_latent": [
-        "204",
+        "153",
         2
       ],
       "audio_latent": [
-        "197",
+        "147",
         0
       ]
     },
@@ -295,26 +286,26 @@
       "title": "LTXVConcatAVLatent"
     }
   },
-  "211": {
+  "160": {
     "inputs": {
       "noise": [
-        "196",
+        "146",
         0
       ],
       "guider": [
-        "207",
+        "156",
         0
       ],
       "sampler": [
-        "208",
+        "157",
         0
       ],
       "sigmas": [
-        "209",
+        "158",
         0
       ],
       "latent_image": [
-        "210",
+        "159",
         0
       ]
     },
@@ -323,11 +314,11 @@
       "title": "SamplerCustomAdvanced"
     }
   },
-  "212": {
+  "161": {
     "inputs": {
       "expression": "a",
       "values.a": [
-        "205",
+        "154",
         0
       ]
     },
@@ -336,21 +327,21 @@
       "title": "Math Expression"
     }
   },
-  "213": {
+  "162": {
     "inputs": {
       "resize_type": "scale dimensions",
       "resize_type.width": [
-        "215",
+        "164",
         0
       ],
       "resize_type.height": [
-        "216",
+        "165",
         0
       ],
       "resize_type.crop": "center",
       "scale_method": "nearest-exact",
       "input": [
-        "31",
+        "138",
         0
       ]
     },
@@ -359,21 +350,21 @@
       "title": "Resize Image/Mask"
     }
   },
-  "214": {
+  "163": {
     "inputs": {
       "resize_type": "scale dimensions",
       "resize_type.width": [
-        "215",
+        "164",
         0
       ],
       "resize_type.height": [
-        "216",
+        "165",
         0
       ],
       "resize_type.crop": "center",
       "scale_method": "nearest-exact",
       "input": [
-        "39",
+        "137",
         0
       ]
     },
@@ -382,29 +373,29 @@
       "title": "Resize Image/Mask"
     }
   },
-  "215": {
+  "164": {
     "inputs": {
-      "value": 1280
+      "value": 720
     },
     "class_type": "PrimitiveInt",
     "_meta": {
       "title": "Width"
     }
   },
-  "216": {
+  "165": {
     "inputs": {
-      "value": 720
+      "value": 1280
     },
     "class_type": "PrimitiveInt",
     "_meta": {
-      "title": "height"
+      "title": "Height"
     }
   },
-  "217": {
+  "166": {
     "inputs": {
       "text": "blurry, out of focus, overexposed, underexposed, low contrast, washed out colors, excessive noise, grainy texture, poor lighting, flickering, motion blur, distorted proportions, unnatural skin tones, deformed facial features, asymmetrical face, missing facial features, extra limbs, disfigured hands, wrong hand count, artifacts around text, unreadable text on shirt or hat, incorrect lettering on cap (“PNTR”), incorrect t-shirt slogan (“JUST DO IT”), missing microphone, misplaced microphone, inconsistent perspective, camera shake, incorrect depth of field, background too sharp, background clutter, distracting reflections, harsh shadows, inconsistent lighting direction, color banding, cartoonish rendering, 3D CGI look, unrealistic materials, uncanny valley effect, incorrect ethnicity, wrong gender, exaggerated expressions, smiling, laughing, exaggerated sadness, wrong gaze direction, eyes looking at camera, mismatched lip sync, silent or muted audio, distorted voice, robotic voice, echo, background noise, off-sync audio, missing sniff sounds, incorrect dialogue, added dialogue, repetitive speech, jittery movement, awkward pauses, incorrect timing, unnatural transitions, inconsistent framing, tilted camera, missing door or shelves, missing shallow depth of field, flat lighting, inconsistent tone, cinematic oversaturation, stylized filters, or AI artifacts.",
       "clip": [
-        "225",
+        "174",
         0
       ]
     },
@@ -413,18 +404,18 @@
       "title": "CLIP Text Encode (Prompt)"
     }
   },
-  "218": {
+  "167": {
     "inputs": {
       "fps": [
-        "212",
+        "161",
         0
       ],
       "images": [
-        "219",
+        "168",
         0
       ],
       "audio": [
-        "220",
+        "169",
         0
       ]
     },
@@ -433,18 +424,18 @@
       "title": "Create Video"
     }
   },
-  "219": {
+  "168": {
     "inputs": {
       "tile_size": 768,
       "overlap": 64,
       "temporal_size": 4096,
       "temporal_overlap": 64,
       "samples": [
-        "200",
+        "149",
         2
       ],
       "vae": [
-        "223",
+        "172",
         2
       ]
     },
@@ -453,14 +444,14 @@
       "title": "VAE Decode (Tiled)"
     }
   },
-  "220": {
+  "169": {
     "inputs": {
       "samples": [
-        "221",
+        "170",
         1
       ],
       "audio_vae": [
-        "224",
+        "173",
         0
       ]
     },
@@ -469,10 +460,10 @@
       "title": "LTXV Audio VAE Decode"
     }
   },
-  "221": {
+  "170": {
     "inputs": {
       "av_latent": [
-        "211",
+        "160",
         1
       ]
     },
@@ -481,11 +472,11 @@
       "title": "LTXVSeparateAVLatent"
     }
   },
-  "222": {
+  "171": {
     "inputs": {
-      "text": "The camera move from a high position to a low position, keeping the character in the frame centered.\nMusic: Synthwave cyberpunk music with calm ambient synths and driving 80s beats.",
+      "text": "The red hair wizard girl looks up as the magical flame burns in her palm. Camera dollys out. The scene turns from a professional photography to a wet pastel watercolor painting. zhuanchang",
       "clip": [
-        "225",
+        "174",
         0
       ]
     },
@@ -494,7 +485,7 @@
       "title": "CLIP Text Encode (Prompt)"
     }
   },
-  "223": {
+  "172": {
     "inputs": {
       "ckpt_name": "ltx-2.3-22b-distilled-fp8.safetensors"
     },
@@ -503,7 +494,7 @@
       "title": "Load Checkpoint"
     }
   },
-  "224": {
+  "173": {
     "inputs": {
       "ckpt_name": "ltx-2.3-22b-distilled-fp8.safetensors"
     },
@@ -512,7 +503,7 @@
       "title": "LTXV Audio VAE Loader"
     }
   },
-  "225": {
+  "174": {
     "inputs": {
       "text_encoder": "gemma_3_12B_it_fp4_mixed.safetensors",
       "ckpt_name": "ltx-2.3-22b-distilled-fp8.safetensors",
@@ -523,15 +514,38 @@
       "title": "LTXV Audio Text Encoder Loader"
     }
   },
-  "226": {
+  "175": {
+    "inputs": {
+      "lora_name": "ltx2.3-transition.safetensors",
+      "strength_model": 1,
+      "model": [
+        "172",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "176": {
+    "inputs": {
+      "value": 6
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Duration"
+    }
+  },
+  "177": {
     "inputs": {
       "expression": "a * b + 1",
       "values.a": [
-        "198",
+        "176",
         0
       ],
       "values.b": [
-        "205",
+        "154",
         0
       ]
     },

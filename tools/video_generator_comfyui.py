@@ -19,13 +19,25 @@ Workflow contract (named via ``_meta.title``):
 import asyncio
 import logging
 import random
+import os
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
+
+from .comfyui_client import (
+    ComfyUIClient,
+    load_workflow,
+    find_node_by_title,
+    find_node_by_titles,
+    set_node_input,
+    set_node_input_by_titles,
+    I2V_REF_TITLES,
+    FLF2V_FIRST_TITLES,
+    FLF2V_LAST_TITLES,
+    PROMPT_TITLES,
+)
 
 from interfaces.video_output import VideoOutput
 from utils.rate_limiter import RateLimiter
-
-from .comfyui_client import ComfyUIClient, load_workflow, set_node_input, find_node_by_title
 
 
 _DEFAULT_I2V = "workflows/wan22_i2v.json"
@@ -76,14 +88,14 @@ class VideoGeneratorComfyUI:
         elif len(reference_image_paths) == 1:
             workflow = load_workflow(self.i2v_workflow_path)
             uploaded = await self.client.upload_image(reference_image_paths[0])
-            set_node_input(workflow, "Reference Image", "image", uploaded)
+            set_node_input_by_titles(workflow, I2V_REF_TITLES, "image", uploaded)
         elif len(reference_image_paths) == 2:
             if self.flf2v_workflow_path:
                 workflow = load_workflow(self.flf2v_workflow_path)
                 uploaded_first = await self.client.upload_image(reference_image_paths[0])
                 uploaded_last = await self.client.upload_image(reference_image_paths[1])
-                set_node_input(workflow, "Reference Image", "image", uploaded_first)
-                set_node_input(workflow, "Reference Image Last", "image", uploaded_last)
+                set_node_input_by_titles(workflow, FLF2V_FIRST_TITLES, "image", uploaded_first)
+                set_node_input_by_titles(workflow, FLF2V_LAST_TITLES, "image", uploaded_last)
             else:
                 # Graceful degradation: no flf2v workflow registered.
                 # Fall back to single-frame i2v using the first frame only,
@@ -100,11 +112,11 @@ class VideoGeneratorComfyUI:
                 )
                 workflow = load_workflow(self.i2v_workflow_path)
                 uploaded = await self.client.upload_image(reference_image_paths[0])
-                set_node_input(workflow, "Reference Image", "image", uploaded)
+                set_node_input_by_titles(workflow, I2V_REF_TITLES, "image", uploaded)
         else:
             raise ValueError("reference_image_paths must contain 0, 1, or 2 images.")
 
-        set_node_input(workflow, "Positive Prompt", "text", prompt)
+        set_node_input_by_titles(workflow, PROMPT_TITLES, "text", prompt)
 
         sampler_id = find_node_by_title(workflow, "Sampler")
         if sampler_id is not None:

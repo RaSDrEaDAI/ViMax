@@ -278,9 +278,46 @@ def find_node_by_title(workflow: Dict[str, Any], title: str) -> Optional[str]:
     return None
 
 
+def find_node_by_titles(workflow: Dict[str, Any], titles: List[str]) -> Optional[str]:
+    """Find a node ID by trying multiple candidate titles in order.
+
+    Used when different workflow templates may use different node-title
+    conventions (e.g. canonical LTX 2.3 templates use "Load Image", older
+    ViMax templates used "Reference Image"). Returns the first match or None.
+    """
+    for title in titles:
+        node_id = find_node_by_title(workflow, title)
+        if node_id is not None:
+            return node_id
+    return None
+
+
+# Canonical title vocabularies for LTX 2.3 template workflows.
+# Each list tries the current canonical title first, then legacy aliases.
+# Add new aliases here as templates evolve.
+I2V_REF_TITLES = ["Load Image", "Reference Image"]
+FLF2V_FIRST_TITLES = ["Load First Frame", "Load Image", "Reference Image"]
+FLF2V_LAST_TITLES = ["Load Last Frame", "Reference Image Last"]
+PROMPT_TITLES = ["Prompt", "Positive Prompt", "CLIP Text Encode (Prompt)"]
+
+
 def set_node_input(workflow: Dict[str, Any], title: str, key: str, value: Any) -> None:
     """Set workflow[<node-by-title>].inputs[key] = value. Raises if not found."""
     node_id = find_node_by_title(workflow, title)
     if node_id is None:
         raise KeyError(f"No node with title {title!r} in workflow")
     workflow[node_id]["inputs"][key] = value
+
+
+def set_node_input_by_titles(workflow: Dict[str, Any], titles: List[str], key: str, value: Any) -> str:
+    """Set inputs[key] = value on the first node whose title is in `titles`.
+
+    Tries each title in order. Returns the node_id that was matched.
+    Raises KeyError if none of the titles match any node — preserves the
+    fail-loud contract of set_node_input.
+    """
+    node_id = find_node_by_titles(workflow, titles)
+    if node_id is None:
+        raise KeyError(f"No node with any title in {titles!r} in workflow")
+    workflow[node_id]["inputs"][key] = value
+    return node_id
