@@ -6,7 +6,12 @@ from tenacity import retry, stop_after_attempt
 from langchain.chat_models.base import BaseChatModel
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
-from interfaces import CharacterInScene, ShotDescription, ShotBriefDescription
+from interfaces import (
+    CharacterInScene,
+    EnvironmentInScene,
+    ShotDescription,
+    ShotBriefDescription,
+)
 
 from utils.retry import after_func
 
@@ -29,6 +34,7 @@ Your task is to design a complete storyboard based on a user-provided script (wh
 The user will provide the following input.
 - Script:A complete scene script containing dialogue, action descriptions, and scene settings. The script focuses on only one scene; there is no need to handle multiple scene transitions. The script input is enclosed within <SCRIPT> and </SCRIPT>.
 - Characters List: A list describing basic information for each character, such as name, personality traits, appearance (if relevant). The character list is enclosed within <CHARACTERS> and </CHARACTERS>.
+- Environments List: A list of the distinct locations the script plays out in, each with an index and a slugline. The environment list is enclosed within <ENVIRONMENTS> and </ENVIRONMENTS>.
 - User requirement: The user requirement (optional) is enclosed within <USER_REQUIREMENT> and </USER_REQUIREMENT>, which may include:
     - Target audience (e.g., children, teenagers, adults).
     - Storyboard style (e.g., realistic, cartoon, abstract).
@@ -43,6 +49,7 @@ The user will provide the following input.
 - Each shot must have a clear narrative purpose—such as establishing the setting, showing character relationships, or highlighting reactions.
 - Use cinematic language deliberately: close-ups for emotion, wide shots for context, and varied angles to direct audience attention.
 - When designing a new shot, first consider whether it can be filmed using an existing camera position. Introduce a new one only if the shot size, angle, and focus differ significantly. If the camera undergoes significant movement, it cannot be used thereafter.
+- Every shot MUST be assigned to exactly one environment from the environments list, via the `env_idx` field, using that environment's index. A shot cannot span two locations and cannot be left unassigned. If the list contains only one environment, every shot gets `env_idx` 0. Never use an index that is not in the list.
 - Keep character names in visual descriptions and speaker fields consistent with the character list. In visual descriptions, enclose names in angle brackets (e.g., <Alice>), but not in dialogue or speaker fields.
 - When describing visual elements, it is necessary to indicate the position of the element within the frame. For example, Character A is on the left side of the frame, facing toward the right, with a table in front of him. The table is positioned slightly to the left of the center of the frame. Ensure that invisible elements are not included. For instance, do not describe someone behind a closed door if they cannot be seen.
 - Avoid unsafe content (violence, discrimination, etc.) in visual descriptions. Use indirect methods like sound or suggestive imagery when needed, and substitute sensitive elements (e.g., ketchup for blood).
@@ -62,6 +69,10 @@ human_prompt_template_design_storyboard = \
 <CHARACTERS>
 {characters_str}
 </CHARACTERS>
+
+<ENVIRONMENTS>
+{environments_str}
+</ENVIRONMENTS>
 
 <USER_REQUIREMENT>
 {user_requirement_str}
@@ -182,6 +193,7 @@ class StoryboardArtist:
         characters: List[CharacterInScene],
         user_requirement: Optional[str] = None,
         retry_timeout: int = 150,
+        environments: Optional[List[EnvironmentInScene]] = None,
     ) -> List[ShotBriefDescription]:
 
         class StoryboardResponse(BaseModel):
@@ -191,12 +203,21 @@ class StoryboardArtist:
 
         script_str = script.strip()
         characters_str = "\n".join([f"Character {index}: {char}" for index, char in enumerate(characters)])
+        environments = environments or []
+        environments_str = "\n".join(
+            [f"Environment {env.idx}: {env.slugline}" for env in environments]
+        ) or "(none extracted)"
         user_requirement_str = user_requirement.strip() if user_requirement else ""
 
         parser = PydanticOutputParser(pydantic_object=StoryboardResponse)
         messages = [
             ('system', system_prompt_template_design_storyboard.format(format_instructions=parser.get_format_instructions())),
-            ('human', human_prompt_template_design_storyboard.format(script_str=script_str, characters_str=characters_str, user_requirement_str=user_requirement_str)),
+            ('human', human_prompt_template_design_storyboard.format(
+                script_str=script_str,
+                characters_str=characters_str,
+                environments_str=environments_str,
+                user_requirement_str=user_requirement_str,
+            )),
         ]
         chain = self.chat_model | parser
         response: StoryboardResponse = await asyncio.wait_for(
@@ -204,6 +225,15 @@ class StoryboardArtist:
             timeout=retry_timeout,
         )
         storyboard = response.storyboard
+
+        # Single-environment scripts are the common case, and the model
+        # occasionally omits env_idx entirely on them. Filling the only possible
+        # value is not a guess. Anything ambiguous is left for the frame-time
+        # check to reject by name.
+        if len(environments) == 1:
+            for shot in storyboard:
+                if shot.env_idx is None:
+                    shot.env_idx = environments[0].idx
 
         return storyboard
 
@@ -245,6 +275,10 @@ class StoryboardArtist:
             idx=shot_brief_desc.idx,
             is_last=shot_brief_desc.is_last,
             cam_idx=shot_brief_desc.cam_idx,
+            # Carried through, never re-derived. The storyboard is where the
+            # shot-to-location assignment is made; decomposition only splits one
+            # shot into frames and has no business second-guessing it.
+            env_idx=shot_brief_desc.env_idx,
             visual_desc=shot_brief_desc.visual_desc,
             variation_type=decomposition.variation_type,
             variation_reason=decomposition.variation_reason,

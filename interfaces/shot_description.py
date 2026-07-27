@@ -17,6 +17,11 @@ class ShotBriefDescription(BaseModel):
         description="The index of the camera in the scene.",
         examples=[0, 1, 2],
     )
+    env_idx: Optional[int] = Field(
+        default=None,
+        description="The index of the environment (location) this shot takes place in, from the provided environment list. Every shot must be assigned to exactly one environment.",
+        examples=[0, 1],
+    )
     visual_desc: str = Field(
         description='''A vivid and detailed visual description of the shot that convey rich visual information through text. The character identifiers in the description must match those in the character list and be enclosed in angle brackets (e.g., <Alice>, <Bob>). All visible characters should be described.
         If there is a conversation, please write down the content of the conversation), when you meet some dialogue, you should write into the visual content description with :" " symbols and the character's features (eg. <SLING> (male, late 20s, Texan accent softened by military precision, confident and energetic.) says: "Gear retracted. Flaps transitioning. Flight path stable. You are clear to climb."). 
@@ -104,6 +109,15 @@ class ShotDescription(BaseModel):
     cam_idx: int = Field(
         description="The index of the camera in the scene.",
         examples=[0, 1, 2],
+    )
+    # Optional on the model, REQUIRED at frame time. Kept optional here so a
+    # storyboard.json written before this field existed still loads; the frame
+    # path then fails loud naming the shot, rather than pydantic failing on a
+    # file the operator can't easily connect to a missing assignment.
+    env_idx: Optional[int] = Field(
+        default=None,
+        description="The index of the environment (location) this shot takes place in, from the provided environment list.",
+        examples=[0, 1],
     )
     visual_desc: str = Field(
         description='''A vivid and detailed visual description of the shot that convey rich visual information through text. The character identifiers in the description must match those in the character list and be enclosed in angle brackets (e.g., <Alice>, <Bob>).

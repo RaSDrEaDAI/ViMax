@@ -7,16 +7,26 @@ no real API calls are made.
 Heavy multimedia dependencies (moviepy, scenedetect, cv2, google-genai,
 etc.) are stubbed at the module level so the pipeline modules can be
 imported in a lightweight test environment.
+
+IMPORTANT (isolation): a module is stubbed ONLY when it cannot really be
+imported. These stubs go into ``sys.modules`` at import time and are never
+removed — ``unittest discover`` imports every test module before running any
+test, so an unconditional stub here replaces PIL for the whole process and any
+test that genuinely uses PIL then fails on a MagicMock. (``PIL.ImageFilter``
+resolving to an auto-created MagicMock attribute rather than the real module is
+what that looks like from the far end.) On a full environment nothing is stubbed
+and nothing leaks; on a lean one the stubs still do their job.
 """
 
 import importlib
+import importlib.util
 import os
 import sys
 import types
 import unittest
 from unittest.mock import patch, MagicMock
 
-# ---- stub heavy deps before any project imports ----
+# ---- stub heavy deps (only those genuinely unavailable) ----
 _STUB_MODULES = [
     "moviepy", "cv2", "scenedetect", "scenedetect.detectors",
     "PIL", "PIL.Image",
@@ -25,14 +35,27 @@ _STUB_MODULES = [
     "langchain_community", "langchain_community.vectorstores",
     "langchain_community.vectorstores.FAISS",
 ]
-_saved = {}
+
+
+def _is_really_importable(name: str) -> bool:
+    if name in sys.modules:
+        return not isinstance(sys.modules[name], MagicMock)
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, AttributeError, ValueError):
+        return False
+
+
+_stubbed = []
 for _mod in _STUB_MODULES:
-    _saved[_mod] = sys.modules.get(_mod)
+    if _is_really_importable(_mod):
+        continue
     mock = MagicMock()
     # Give stub a __spec__ so importlib.util.find_spec() works
     mock.__spec__ = importlib.machinery.ModuleSpec(_mod, None)
     mock.__path__ = []
     sys.modules[_mod] = mock
+    _stubbed.append(_mod)
 
 from utils.provider_presets import resolve_chat_model_config
 

@@ -2,8 +2,8 @@ import os
 import logging
 from agents import Screenwriter, CharacterExtractor, CharacterPortraitsGenerator
 from pipelines.script2video_pipeline import Script2VideoPipeline
-from interfaces import CharacterInScene
-from typing import List, Dict, Optional
+from interfaces import CharacterInScene, SeedAsset
+from typing import List, Dict, Optional, Union
 import asyncio
 import json
 from moviepy import VideoFileClip, concatenate_videoclips
@@ -11,6 +11,7 @@ import yaml
 from langchain.chat_models import init_chat_model
 from tools.render_backend import RenderBackend, _load_dotenv, _substitute_env_vars
 from utils.provider_presets import resolve_chat_model_config
+from utils.composite_sheet import build_character_sheet, character_sheet_description
 
 
 class Idea2VideoPipeline:
@@ -20,10 +21,14 @@ class Idea2VideoPipeline:
         image_generator: str,
         video_generator: str,
         working_dir: str,
+        sheet_image_generator=None,
     ):
         self.chat_model = chat_model
         self.image_generator = image_generator
         self.video_generator = video_generator
+        # Sheet-class assets (portraits, rotation grids, plates) can render on a
+        # separate backend from keyframes. Defaults to the keyframe backend.
+        self.sheet_image_generator = sheet_image_generator or image_generator
         self.working_dir = working_dir
         os.makedirs(self.working_dir, exist_ok=True)
 
@@ -31,7 +36,7 @@ class Idea2VideoPipeline:
         self.character_extractor = CharacterExtractor(
             chat_model=self.chat_model)
         self.character_portraits_generator = CharacterPortraitsGenerator(
-            image_generator=self.image_generator)
+            image_generator=self.sheet_image_generator)
 
     @classmethod
     def init_from_config(
@@ -73,6 +78,7 @@ class Idea2VideoPipeline:
             image_generator=backend.image_generator,
             video_generator=backend.video_generator,
             working_dir=working_dir_override or config["working_dir"],
+            sheet_image_generator=backend.sheet_image_generator,
         )
 
     async def extract_characters(
@@ -178,43 +184,56 @@ class Idea2VideoPipeline:
             self.working_dir, "character_portraits", f"{character.idx}_{character.identifier_in_scene}")
         os.makedirs(character_dir, exist_ok=True)
 
+        # Same composite-sheet chain as Script2VideoPipeline. It has to match:
+        # this registry is handed straight to Script2VideoPipeline, whose keyframe
+        # path requires a `sheet` entry and fails loud without one. A 3-view
+        # registry here would break every idea2video run at the first frame.
         front_portrait_path = os.path.join(character_dir, "front.png")
         if os.path.exists(front_portrait_path):
-            pass
+            print(f"🚀 Skipped front portrait for {character.identifier_in_scene}, already exists.")
         else:
             front_portrait_output = await self.character_portraits_generator.generate_front_portrait(character, style)
             front_portrait_output.save(front_portrait_path)
 
-        side_portrait_path = os.path.join(character_dir, "side.png")
-        if os.path.exists(side_portrait_path):
-            pass
+        anchor_path = os.path.join(character_dir, "anchor.png")
+        if os.path.exists(anchor_path):
+            print(f"🚀 Skipped identity anchor for {character.identifier_in_scene}, already exists.")
         else:
-            side_portrait_output = await self.character_portraits_generator.generate_side_portrait(character, front_portrait_path)
-            side_portrait_output.save(side_portrait_path)
+            print(f"🖼️ Generating identity anchor for {character.identifier_in_scene}...")
+            anchor_output = await self.character_portraits_generator.generate_identity_anchor(character, front_portrait_path)
+            anchor_output.save(anchor_path)
 
-        back_portrait_path = os.path.join(character_dir, "back.png")
-        if os.path.exists(back_portrait_path):
-            pass
+        grid_path = os.path.join(character_dir, "rotation_grid.png")
+        if os.path.exists(grid_path):
+            print(f"🚀 Skipped rotation grid for {character.identifier_in_scene}, already exists.")
         else:
-            back_portrait_output = await self.character_portraits_generator.generate_back_portrait(character, front_portrait_path)
-            back_portrait_output.save(back_portrait_path)
+            print(f"🖼️ Generating rotation grid for {character.identifier_in_scene}...")
+            grid_output = await self.character_portraits_generator.generate_rotation_grid(character, anchor_path)
+            grid_output.save(grid_path)
+
+        sheet_path = os.path.join(character_dir, "sheet.png")
+        if os.path.exists(sheet_path):
+            print(f"🚀 Skipped character sheet for {character.identifier_in_scene}, already exists.")
+        else:
+            print(f"🧩 Composing character sheet for {character.identifier_in_scene}...")
+            build_character_sheet(
+                anchor_path=anchor_path,
+                grid_path=grid_path,
+                out_path=sheet_path,
+            )
 
         print(
             f"☑️ Completed character portrait generation for {character.identifier_in_scene}.")
 
         return {
             character.identifier_in_scene: {
+                "sheet": {
+                    "path": sheet_path,
+                    "description": character_sheet_description(character.identifier_in_scene),
+                },
                 "front": {
                     "path": front_portrait_path,
                     "description": f"A front view portrait of {character.identifier_in_scene}.",
-                },
-                "side": {
-                    "path": side_portrait_path,
-                    "description": f"A side view portrait of {character.identifier_in_scene}.",
-                },
-                "back": {
-                    "path": back_portrait_path,
-                    "description": f"A back view portrait of {character.identifier_in_scene}.",
                 },
             }
         }
@@ -224,8 +243,13 @@ class Idea2VideoPipeline:
         idea: str,
         user_requirement: str,
         style: str,
+        seed_assets: Optional[List[Union[SeedAsset, str, Dict]]] = None,
         reference_image_urls: Optional[List[str]] = None,
     ):
+        # Legacy alias for the seedbed seam. Bare URLs coerce to
+        # role='reference', so existing orchestrator scripts keep working.
+        if reference_image_urls and not seed_assets:
+            seed_assets = reference_image_urls
 
         story = await self.develop_story(idea=idea, user_requirement=user_requirement)
 
@@ -249,6 +273,7 @@ class Idea2VideoPipeline:
                 image_generator=self.image_generator,
                 video_generator=self.video_generator,
                 working_dir=scene_working_dir,
+                sheet_image_generator=self.sheet_image_generator,
             )
             final_video_path = await script2video_pipeline(
                 script=scene_script,
@@ -256,7 +281,7 @@ class Idea2VideoPipeline:
                 style=style,
                 characters=characters,
                 character_portraits_registry=character_portraits_registry,
-                reference_image_urls=reference_image_urls,
+                seed_assets=seed_assets,
             )
             all_video_paths.append(final_video_path)
 

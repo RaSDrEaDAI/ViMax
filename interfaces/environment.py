@@ -1,3 +1,5 @@
+import re
+
 from pydantic import BaseModel, Field
 from typing import List, Optional, Union, Dict
 from PIL import Image
@@ -5,6 +7,11 @@ from PIL import Image
 
 
 class EnvironmentInScene(BaseModel):
+    idx: int = Field(
+        default=0,
+        description="The index of the environment in the scene, starting from 0. Shots reference environments by this index.",
+        examples=[0, 1, 2],
+    )
     slugline: str = Field(
         description="The slugline of the scene, indicating the location and time of day",
         examples=[
@@ -22,5 +29,21 @@ class EnvironmentInScene(BaseModel):
     def __str__(self):
         s = f"{self.slugline} -- {self.description}"
         return s
+
+    @property
+    def slug(self) -> str:
+        """Filesystem-safe form of the slugline, for the plate directory name."""
+        return normalize_slugline(self.slugline).replace(" ", "_")[:60] or "location"
+
+
+def normalize_slugline(slugline: str) -> str:
+    """Normalize a slugline for dedupe and for path building.
+
+    Uppercased, punctuation collapsed to spaces, whitespace squeezed. Sluglines
+    arrive from an LLM, so "INT. Coffee Shop - Night" and "INT COFFEE SHOP -
+    NIGHT" are the same location and must not become two master plates.
+    """
+    cleaned = re.sub(r"[^A-Za-z0-9]+", " ", slugline or "")
+    return re.sub(r"\s+", " ", cleaned).strip().upper()
 
 
