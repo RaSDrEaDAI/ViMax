@@ -11,16 +11,23 @@ class ImageOutput:
     fmt: Literal["b64", "url", "pil", "np"]
     ext: str = "png"
     data: Union[str, Image.Image]
+    sent_input: Optional[dict] = None
 
     def __init__(
         self,
         fmt: Literal["b64", "url", "pil", "np"],
         ext: str,
         data: Union[str, Image.Image],
+        sent_input: Optional[dict] = None,
     ):
         self.fmt = fmt
         self.ext = ext
         self.data = data
+        # The EXACT arguments dispatched to the backend, when the backend
+        # records them. Call sites persist THIS as the forensic record — not
+        # their pre-call draft — so what's on disk can't lie about what was
+        # sent. None for backends that don't report it.
+        self.sent_input = sent_input
 
 
     def save_b64(self, path: str) -> None:

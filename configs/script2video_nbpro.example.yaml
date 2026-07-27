@@ -1,0 +1,145 @@
+# NB Pro keyframe config for script2video — COMMITTED TEMPLATE.
+#
+# Copy to `configs/script2video_nbpro_fal.yaml` before use. That name matches
+# the gitignored `configs/*_fal.yaml` pattern, so your live copy (and any keys
+# you inline into it) stays out of git. This template stays committed.
+#
+#   cp configs/script2video_nbpro.example.yaml configs/script2video_nbpro_fal.yaml
+#
+# ── SPEND GATE ───────────────────────────────────────────────────────────────
+# Nano Banana Pro is a PAID backend. `allow_paid_image_spend` defaults to false
+# and the adapter raises at call time — before any network I/O — unless it is
+# explicitly authorized. There is no local fallback and no silent downgrade: an
+# unauthorized run stops rather than quietly rendering something worse.
+#
+#   Windows (PowerShell):  $env:VIMAX_ALLOW_PAID_IMAGE_SPEND = "true"
+#   POSIX:                 export VIMAX_ALLOW_PAID_IMAGE_SPEND=true
+#
+# ── WHAT RENDERS WHERE ───────────────────────────────────────────────────────
+#   Shot keyframes (first_frame / last_frame)  -> NB Pro /edit  (PAID)
+#   Character portraits + rotation grids       -> local ComfyUI (free)
+#   Environment plates                         -> local ComfyUI (free)
+#   Video                                      -> local LTX 2.3, escalating to
+#                                                 fal Veo 3 on the usual gates
+#
+# Character sheets are the identity authority for every keyframe, so if local
+# Qwen quality caps them, point `sheet_image_generator` at the same NB Pro
+# class as `image_generator`. That is a config change, not a code change.
+
+chat_model:
+  init_args:
+    model: claude-opus-4-8
+    model_provider: anthropic
+    api_key: ${ANTHROPIC_API_KEY}
+    max_tokens: 16384
+    # NOTE: temperature is deprecated/rejected by claude-opus-4-8 (API 400).
+  max_requests_per_minute: 40
+  max_requests_per_day: 2000
+  # No text_only flag — Claude supports vision natively.
+
+
+# Optional. When present, the seedbed ingest step describes each downloaded
+# asset so the reference pool carries real descriptions instead of bare hints.
+# Absence is recorded as `description: null`, never faked.
+#
+# vision_chat_model:
+#   class_path: tools.vision_model.VisionModelClient
+#   init_args:
+#     api_key: ${FAL_API_KEY}
+#     model: google/gemini-2.5-flash
+#     endpoint: https://fal.run/fal-ai/any-llm
+#     timeout: 60
+#   max_requests_per_minute: 20
+
+
+# ── Keyframe authority: Nano Banana Pro (PAID) ───────────────────────────────
+image_generator:
+  class_path: tools.ImageGeneratorNanoBananaProFalAI
+  init_args:
+    api_key: ${FAL_API_KEY}
+    resolution: "2K"            # '1K' | '2K' | '4K' — no '0.5K' on Pro
+    allow_paid_image_spend: ${VIMAX_ALLOW_PAID_IMAGE_SPEND:-false}
+    # Hard guard. The pipeline budgets 6 slots by role priority and drops from
+    # the tail with a printed notice, so the adapter should never see an
+    # overflow — if it does, that is a pipeline bug and it raises.
+    max_reference_images: 6
+    # Resolves after working_dir_override, so each orchestrator job gets its
+    # own cost_ledger.jsonl instead of all jobs appending to one file.
+    working_dir: ${working_dir}
+  max_requests_per_minute: 20
+
+
+# ── Sheet assets: portraits, rotation grids, environment plates (local/free) ──
+# Optional section. Omit it and sheets render on `image_generator` (i.e. paid).
+sheet_image_generator:
+  class_path: tools.ImageGeneratorRouter
+  init_args:
+    default_backend: qwen
+    route_portraits_to_qwen: true
+    route_text_to_qwen: true
+    route_environments_to_zimage: true
+    route_multiref_to_qwen_edit: true
+    multiref_threshold: 1
+
+    # Qwen 2512 — best portraits, character identity, text-in-image.
+    qwen_backend:
+      class_path: tools.ImageGeneratorComfyUI
+      init_args:
+        base_url: http://127.0.0.1:8189
+        t2i_workflow: workflows/qwen2512_t2i.json
+      max_requests_per_minute: 8
+
+    # Qwen Image Edit 2511 — the anchor and rotation-grid i2i calls.
+    qwen_edit_backend:
+      class_path: tools.ImageGeneratorComfyUI
+      init_args:
+        base_url: http://127.0.0.1:8189
+        i2i_workflow: workflows/qwen_edit_2511_multiref.json
+      max_requests_per_minute: 6
+
+    # Z-image Turbo — fast environment / establishing plates.
+    zimage_backend:
+      class_path: tools.ImageGeneratorComfyUI
+      init_args:
+        base_url: http://127.0.0.1:8189
+        t2i_workflow: workflows/zimage_turbo_t2i.json
+      max_requests_per_minute: 15
+
+    # Flux 1-dev + LoRA — LoRA-locked characters and fallback.
+    flux_backend:
+      class_path: tools.ImageGeneratorComfyUI
+      init_args:
+        base_url: http://127.0.0.1:8189
+        t2i_workflow: workflows/flux1_dev_t2i_lora.json
+        i2i_workflow: workflows/flux1_kontext_i2i.json
+      max_requests_per_minute: 12
+
+
+video_generator:
+  class_path: tools.VideoGeneratorRouter
+  init_args:
+    default_route: local
+    local_backend:
+      class_path: tools.VideoGeneratorComfyUI
+      init_args:
+        base_url: http://127.0.0.1:8189
+        i2v_workflow: workflows/ltx23_i2v.json
+        flf2v_workflow: workflows/ltx23_flf2v.json
+        t2v_workflow: workflows/ltx23_t2v.json
+      max_requests_per_minute: 10
+    escalation_backend:
+      class_path: tools.VideoGeneratorFalAI
+      init_args:
+        api_key: ${FAL_API_KEY}
+        t2v_model: fal-ai/veo3/fast
+        ff2v_model: fal-ai/veo3/fast/image-to-video
+      max_requests_per_minute: 5
+      max_requests_per_day: 50
+    escalate_on_lipsync: true
+    escalate_on_multiref: true
+    escalate_on_large_variation: true
+    escalate_on_high_complexity: true
+    retry_escalation_on_local_failure: true
+
+
+working_dir: .working_dir/script2video_nbpro
