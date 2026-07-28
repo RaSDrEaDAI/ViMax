@@ -24,10 +24,11 @@ class ShotBriefDescription(BaseModel):
     )
     visual_desc: str = Field(
         description='''A vivid and detailed visual description of the shot that convey rich visual information through text. The character identifiers in the description must match those in the character list and be enclosed in angle brackets (e.g., <Alice>, <Bob>). All visible characters should be described.
-        If there is a conversation, please write down the content of the conversation), when you meet some dialogue, you should write into the visual content description with :" " symbols and the character's features (eg. <SLING> (male, late 20s, Texan accent softened by military precision, confident and energetic.) says: "Gear retracted. Flaps transitioning. Flight path stable. You are clear to climb."). 
+        When a character speaks, describe ONLY the visible mechanics of speech — who is speaking, that they are mid-sentence, lips parted, jaw moving, head turned toward or away from the lens — and never write the spoken words. The dialogue text belongs in audio_desc and ONLY in audio_desc. A line written in both fields reaches the video model twice and is spoken twice.
         ''',
         examples=[
             "An over-the-shoulder shot at eye level, positioned behind <Alice>. The foreground, including <Alice>'s shoulder and head, is softly blurred, directing focus onto <Bob>'s face. <Bob>'s subtle reactions—shifting from surprise to delight—are clearly visible. The supermarket background is gently blurred with cool fluorescent lighting.",
+            "A medium shot at eye level. <Denise> (feathered hair, mint-green leotard) snaps her head to the lens with a radiant smile, lips parted mid-count, then extends both arms forward. Three participants behind her move in unison. Pastel studio walls, flat broadcast lighting.",
         ]
     )
 
@@ -121,7 +122,7 @@ class ShotDescription(BaseModel):
     )
     visual_desc: str = Field(
         description='''A vivid and detailed visual description of the shot that convey rich visual information through text. The character identifiers in the description must match those in the character list and be enclosed in angle brackets (e.g., <Alice>, <Bob>).
-        If there is a conversation, please write down the content of the conversation), when you meet some dialogue, you should write into the visual content description with :" " symbols and the character's features (eg. <SLING> (male, late 20s, Texan accent softened by military precision, confident and energetic.) says: "Gear retracted. Flaps transitioning. Flight path stable. You are clear to climb."). ''',
+        When a character speaks, describe ONLY the visible mechanics of speech — who is speaking, that they are mid-sentence, lips parted, jaw moving, head turned toward or away from the lens — and never write the spoken words. The dialogue text belongs in audio_desc and ONLY in audio_desc.''',
         examples=[
             "An over-the-shoulder shot at eye level, positioned behind <Alice>. The foreground, including <Alice>'s shoulder and head, is softly blurred, directing focus onto <Bob>'s face. <Bob>'s subtle reactions—shifting from surprise to delight—are clearly visible. The supermarket background is gently blurred with cool fluorescent lighting.",
         ]
@@ -168,8 +169,13 @@ class ShotDescription(BaseModel):
         description="The indices of the characters in the last frame.",
     )
     motion_desc: str = Field(
-        description='''The motion description of the shot.
-        If there is a conversation, please write down the content of the conversation), when you meet some dialogue, you should write into the visual content description with :" " symbols and the character's features (eg. SLING (male, late 20s, Texan accent softened by military precision, confident and energetic.) says: "Gear retracted. Flaps transitioning. Flight path stable. You are clear to climb."). If there is a narration, you should write into the visual content description with :" " symbols and the narration's features (eg. Narration: "Everything is looking good. "). ''',
+        description='''The motion description of the shot: camera movement plus the movement of elements within the frame.
+        When a character speaks, describe ONLY the visible mechanics of speech — who is speaking, that they are mid-sentence, lips parted, jaw moving, head turned toward or away from the lens — and never write the spoken words. Same for narration: do not write the narration text. The dialogue and narration text belongs in audio_desc and ONLY in audio_desc.
+        This field and audio_desc are concatenated into a single prompt for the video model. Any line of speech that appears in both is sent twice and is spoken twice.''',
+        examples=[
+            "Static camera. The woman in the yellow rain slicker half-turns her head over her shoulder toward the off-frame left, still holding the wooden spoon, and speaks — lips moving, expression calm and caring.",
+            "Slow push-in from medium to close-up. The man with the grey beard keeps his eyes on the lantern, jaw moving as he answers without looking up.",
+        ],
     )
 
     # audio

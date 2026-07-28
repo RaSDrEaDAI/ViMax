@@ -67,6 +67,32 @@ ONE reference image is the identity anchor: the wardrobe, silhouette, proportion
 """
 
 
+def describe_features(character: CharacterInScene) -> str:
+    """Join a character's static and dynamic features for a portrait prompt.
+
+    Both fields are ``Optional[str]`` and the extractor prompt explicitly tells
+    the model to leave them null when the script doesn't describe them (and when
+    the character isn't visible at all). String-concatenating them therefore
+    raised ``TypeError: can only concatenate str (not "NoneType") to str`` — and
+    because the input never changes between attempts, tenacity retried it three
+    times and failed identically each time. It killed four orchestrator runs at
+    ~45s (.working_dir/orchestrator/{47e37ece,79be644b,ac428304,fc617145}).
+
+    Omits absent fields rather than writing "None" into the prompt: the literal
+    word None in a generation prompt is a real instruction to the image model.
+    """
+    parts = []
+    if character.static_features:
+        parts.append(f"(static) {character.static_features}")
+    if character.dynamic_features:
+        parts.append(f"(dynamic) {character.dynamic_features}")
+    if not parts:
+        # Nothing described at all. Say so plainly instead of sending an empty
+        # Features: line, which reads as a truncated prompt.
+        return "not described in the script; design plausible, distinctive features"
+    return "; ".join(parts)
+
+
 class CharacterPortraitsGenerator:
     def __init__(
         self,
@@ -81,7 +107,7 @@ class CharacterPortraitsGenerator:
         character: CharacterInScene,
         style: str,
     ) -> ImageOutput:
-        features = "(static) " + character.static_features + "; (dynamic) " + character.dynamic_features
+        features = describe_features(character)
         prompt = prompt_template_front.format(
             identifier=character.identifier_in_scene,
             features=features,

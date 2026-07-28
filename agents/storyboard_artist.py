@@ -51,6 +51,7 @@ The user will provide the following input.
 - When designing a new shot, first consider whether it can be filmed using an existing camera position. Introduce a new one only if the shot size, angle, and focus differ significantly. If the camera undergoes significant movement, it cannot be used thereafter.
 - Every shot MUST be assigned to exactly one environment from the environments list, via the `env_idx` field, using that environment's index. A shot cannot span two locations and cannot be left unassigned. If the list contains only one environment, every shot gets `env_idx` 0. Never use an index that is not in the list.
 - Keep character names in visual descriptions and speaker fields consistent with the character list. In visual descriptions, enclose names in angle brackets (e.g., <Alice>), but not in dialogue or speaker fields.
+- SPOKEN WORDS GO IN EXACTLY ONE PLACE: `audio_desc`. In `visual_desc`, describe only the visible mechanics of speech — who is speaking, that they are mid-sentence, lips parted, jaw moving, head turned toward or away from the lens. Never write the dialogue text in `visual_desc`. `visual_desc` and the motion description are concatenated with `audio_desc` into one prompt for the video model, so a line written in both is spoken twice.
 - When describing visual elements, it is necessary to indicate the position of the element within the frame. For example, Character A is on the left side of the frame, facing toward the right, with a table in front of him. The table is positioned slightly to the left of the center of the frame. Ensure that invisible elements are not included. For instance, do not describe someone behind a closed door if they cannot be seen.
 - Avoid unsafe content (violence, discrimination, etc.) in visual descriptions. Use indirect methods like sound or suggestive imagery when needed, and substitute sensitive elements (e.g., ketchup for blood).
 - Assign at most one dialogue line per character per shot. Each line of dialogue should correspond to a shot.
@@ -106,6 +107,7 @@ Additionally, you will receive a sequence of potential characters, each containi
 - Ensure all output values (except keys) match the language used in the script.
 - Ensure the first and last frame descriptions are pure "snapshots," containing no ongoing actions (e.g., "He is about to stand up" is unacceptable; it should be "He is sitting on the chair, leaning slightly forward").
 - In the motion description, you must clearly distinguish between camera movement and on-screen movement. Use professional cinematic terminology (e.g., dolly shot, pan, zoom, etc.) as precisely as possible to describe camera movement.
+- NEVER write spoken words in the motion description. If the input visual description quotes dialogue or narration, describe the ACT of speaking instead — "speaks, lips moving, expression calm", "jaw moving as he answers without looking up", "mid-count, lips parted" — and drop the quoted text entirely. The words are carried separately in the shot's audio description, and the two are concatenated into one prompt for the video model, so any line appearing in both is spoken twice.
 - In the motion description, you cannot directly use character names to refer to characters; instead, you should use the characters' visible characteristics to refer to them. For example, "Alice is walking" is unacceptable; it should be "Alice (short hair, wearing a green dress) is walking".
 - The last frame description must be logically consistent with the first frame description and the motion description. All actions described in the motion section should be reflected in the static image of the last frame.
 - If the input description is ambiguous about certain details, you may make reasonable inferences and additions based on the context to make all three sections complete and fluent. However, core elements must strictly adhere to the input text.
@@ -157,7 +159,7 @@ class VisDescDecompositionResponse(BaseModel):
         examples=[[0], [1], [0, 1], []]
     )
     motion_desc: str = Field(
-        description="The motion description of the shot. Describe the dynamic visual changes within the shot (camera movement and the movement of elements within the frame)",
+        description="The motion description of the shot. Describe the dynamic visual changes within the shot (camera movement and the movement of elements within the frame). When a character speaks, describe only the VISIBLE mechanics of speech (lips moving, jaw working, mid-sentence, head turned to or from the lens) and never the spoken words themselves — the words are carried in the shot's audio description.",
         examples=[
             "Static camera. Alice (short hair, wearing a green dress) is walking towards the camera.",
             "Dolly in from meidum shot to close-up. Bob (with a beard, wearing a white T-shirt) smiles to the camera.",

@@ -17,6 +17,8 @@ from tools.render_backend import RenderBackend, _load_dotenv, _substitute_env_va
 from utils.provider_presets import resolve_chat_model_config
 from utils.composite_sheet import build_character_sheet, character_sheet_description
 from utils.image import download_image
+from utils.video import concatenate_shot_videos
+from utils.dialogue import build_video_prompt
 from utils.reference_slots import (
     assemble_indexed_prompt,
     build_reference_slots,
@@ -260,12 +262,13 @@ class Script2VideoPipeline:
             print(f"🚀 Skipped concatenating videos, already exists.")
         else:
             print(f"🎬 Starting concatenating videos...")
-            video_clips = [
-                VideoFileClip(os.path.join(self.working_dir, "shots", f"{shot_description.idx}", "video.mp4"))
-                for shot_description in shot_descriptions
-            ]
-            final_video = concatenate_videoclips(video_clips)
-            final_video.write_videofile(final_video_path, codec="libx264", preset="medium")
+            concatenate_shot_videos(
+                [
+                    os.path.join(self.working_dir, "shots", f"{shot_description.idx}", "video.mp4")
+                    for shot_description in shot_descriptions
+                ],
+                final_video_path,
+            )
             print(f"☑️ Concatenated videos, saved to {final_video_path}.")
 
         return final_video_path
@@ -440,8 +443,21 @@ class Script2VideoPipeline:
                 frame_paths.append(os.path.join(self.working_dir, "shots", f"{shot_description.idx}", "last_frame.png"))
 
             print(f"🎬 Starting video generation for shot {shot_description.idx}...")
+            # audio_desc owns the spoken words; motion_desc should describe only
+            # the visible mechanics of speech. When a line lands in both, the
+            # model is told it twice and says it twice. The prompts now forbid
+            # this, but compliance is probabilistic and the defect is audible-only,
+            # so the join enforces it and reports what it removed.
+            video_prompt, removed_lines = build_video_prompt(
+                shot_description.motion_desc, shot_description.audio_desc,
+            )
+            for line in removed_lines:
+                print(
+                    f"🔉 shot {shot_description.idx}: removed duplicated spoken "
+                    f"line from motion_desc (already in audio_desc): \"{line[:60]}\""
+                )
             video_output = await self.video_generator.generate_single_video(
-                prompt=shot_description.motion_desc + "\n" + shot_description.audio_desc,
+                prompt=video_prompt,
                 reference_image_paths=frame_paths,
                 # Structured metadata for smart routing (local LTX vs paid API):
                 # - variation_type drives large-variation escalation

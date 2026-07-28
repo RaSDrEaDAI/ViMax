@@ -12,6 +12,7 @@ from langchain.chat_models import init_chat_model
 from tools.render_backend import RenderBackend, _load_dotenv, _substitute_env_vars
 from utils.provider_presets import resolve_chat_model_config
 from utils.composite_sheet import build_character_sheet, character_sheet_description
+from utils.video import concatenate_shot_videos
 
 
 class Idea2VideoPipeline:
@@ -290,9 +291,10 @@ class Idea2VideoPipeline:
             print(f"🚀 Skipped concatenating videos, already exists.")
         else:
             print(f"🎬 Starting concatenating videos...")
-            video_clips = [VideoFileClip(final_video_path)
-                           for final_video_path in all_video_paths]
-            final_video = concatenate_videoclips(video_clips)
-            final_video.write_videofile(final_video_path)
+            # This used to build its clip list with a comprehension variable also
+            # named final_video_path, which reads like the output path is being
+            # clobbered before it is written. Comprehension scope meant it never
+            # was, but nobody should have to prove that to read the line.
+            concatenate_shot_videos(all_video_paths, final_video_path)
             print(f"☑️ Concatenated videos, saved to {final_video_path}.")
         return final_video_path
