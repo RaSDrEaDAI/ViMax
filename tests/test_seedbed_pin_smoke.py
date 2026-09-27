@@ -63,8 +63,8 @@ def _pipeline(working_dir, image_generator=None):
         video_generator=_NoopVideoGenerator(),
         working_dir=working_dir,
     )
-    # Class-level event dicts are shared between instances; clear them so tests
-    # don't inherit another test's events.
+    # Event dicts are per-instance now (upstream df1480d port), so this is a
+    # no-op kept only as an explicit starting state.
     pipeline.frame_events = {}
     return pipeline
 

@@ -46,12 +46,6 @@ def _seedbed_slug(url: str) -> str:
 
 class Script2VideoPipeline:
 
-    # events
-    character_portrait_events = {}
-    shot_desc_events = {}
-    frame_events = {}
-
-
     def __init__(
         self,
         chat_model: str,
@@ -61,6 +55,10 @@ class Script2VideoPipeline:
         sheet_image_generator=None,
         vision_model=None,
     ):
+        # Per-instance coordination events. These were class attributes, so
+        # every instance — idea2video builds one per scene — shared (and never
+        # reset) the same dicts, leaking shot/frame state across scenes.
+        self._reset_events()
 
         self.chat_model = chat_model
         self.image_generator = image_generator
@@ -87,6 +85,12 @@ class Script2VideoPipeline:
         self.working_dir = working_dir
         os.makedirs(self.working_dir, exist_ok=True)
 
+
+
+    def _reset_events(self) -> None:
+        self.character_portrait_events = {}
+        self.shot_desc_events = {}
+        self.frame_events = {}
 
 
     @classmethod
@@ -162,6 +166,9 @@ class Script2VideoPipeline:
         # coerce to role='reference', so existing callers keep working.
         if reference_image_urls and not seed_assets:
             seed_assets = reference_image_urls
+        # Fresh events per render: a second call on the same instance must not
+        # inherit the first render's already-set (or never-set) events.
+        self._reset_events()
         seedbed_registry = await self.ingest_seed_assets(seed_assets)
 
         if characters is None:
@@ -797,7 +804,10 @@ class Script2VideoPipeline:
             )
             print(f"☑️ Composed character sheet, saved to {sheet_path}.")
 
-        self.character_portrait_events[character.idx].set()
+        # setdefault: a caller that passes `characters` skips extract_characters,
+        # which is what registers these events. With per-render dicts there is
+        # no stale entry from another instance to fall back on.
+        self.character_portrait_events.setdefault(character.idx, asyncio.Event()).set()
 
         print(f"☑️ Completed character portrait generation for {character.identifier_in_scene}.")
 

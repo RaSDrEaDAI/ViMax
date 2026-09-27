@@ -5,11 +5,16 @@ and adapted to this fork. None of these bugs raised — they rendered the wrong
 thing — so each test pins the observable choice, not just "no exception".
 """
 
+import asyncio
+import os
+import tempfile
 import unittest
+from unittest.mock import AsyncMock, MagicMock
 
 from interfaces.camera import Camera
 from interfaces.shot_description import ShotDescription
 from pipelines.script2video_pipeline import (
+    Script2VideoPipeline,
     _collect_priority_shot_idxs,
     _group_shots_into_cameras,
 )
@@ -70,6 +75,109 @@ class TestPriorityShotIdxs(unittest.TestCase):
 
     def test_roots_contribute_nothing(self):
         self.assertEqual(_collect_priority_shot_idxs([Camera(idx=0, active_shot_idxs=[0])]), [])
+
+
+def _pipeline(working_dir):
+    return Script2VideoPipeline(
+        chat_model=MagicMock(),
+        image_generator=MagicMock(),
+        video_generator=MagicMock(),
+        working_dir=working_dir,
+    )
+
+
+class _Stop(Exception):
+    pass
+
+
+class TestEventDictsAreInstanceState(unittest.IsolatedAsyncioTestCase):
+    def test_two_pipelines_do_not_share_events(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p1 = _pipeline(os.path.join(tmp, "a"))
+            p2 = _pipeline(os.path.join(tmp, "b"))
+            p1.frame_events[0] = {"first_frame": asyncio.Event()}
+            p1.shot_desc_events[0] = asyncio.Event()
+            p1.character_portrait_events[0] = asyncio.Event()
+            self.assertEqual(p2.frame_events, {})
+            self.assertEqual(p2.shot_desc_events, {})
+            self.assertEqual(p2.character_portrait_events, {})
+
+    def test_no_class_level_mutable_event_dicts(self):
+        for name in ("frame_events", "shot_desc_events", "character_portrait_events"):
+            self.assertNotIsInstance(
+                Script2VideoPipeline.__dict__.get(name), dict,
+                f"{name} must not be shared class state",
+            )
+
+    async def test_each_render_starts_with_empty_events(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pipeline = _pipeline(tmp)
+            seen = []
+
+            async def record_then_stop(seed_assets):
+                seen.append((dict(pipeline.frame_events), dict(pipeline.shot_desc_events),
+                             dict(pipeline.character_portrait_events)))
+                raise _Stop()
+
+            pipeline.ingest_seed_assets = record_then_stop
+            for _ in range(2):
+                # Leftovers from a previous render on the same instance.
+                pipeline.frame_events[3] = {"first_frame": asyncio.Event()}
+                pipeline.shot_desc_events[3] = asyncio.Event()
+                pipeline.character_portrait_events[3] = asyncio.Event()
+                with self.assertRaises(_Stop):
+                    await pipeline(script="s", user_requirement="u", style="st")
+            self.assertEqual(seen, [({}, {}, {}), ({}, {}, {})])
+
+
+class TestResumeEqualsFresh(unittest.IsolatedAsyncioTestCase):
+    """A4 (already fixed in this fork): a resumed camera must hand the keyframe
+    the same new-camera continuity anchor a fresh run does."""
+
+    async def _anchor_for(self, resume: bool):
+        with tempfile.TemporaryDirectory() as tmp:
+            pipeline = _pipeline(tmp)
+            shots = [_shot(0, cam_idx=0), _shot(1, cam_idx=1)]
+            camera = Camera(
+                idx=1, active_shot_idxs=[1],
+                parent_cam_idx=0, parent_shot_idx=0,
+                missing_info="wrong background",
+            )
+            parent_done = asyncio.Event()
+            parent_done.set()
+            pipeline.frame_events = {0: {"first_frame": parent_done}, 1: {"first_frame": asyncio.Event()}}
+
+            shot_dir = os.path.join(tmp, "shots", "1")
+            os.makedirs(shot_dir, exist_ok=True)
+            new_camera_path = os.path.join(shot_dir, "new_camera_1.png")
+            open(os.path.join(shot_dir, "transition_video_from_shot_0.mp4"), "wb").close()
+            if resume:
+                open(new_camera_path, "wb").close()
+            else:
+                extracted = MagicMock()
+                extracted.save.side_effect = lambda path: open(path, "wb").close()
+                pipeline.camera_image_generator.get_new_camera_image = MagicMock(return_value=extracted)
+
+            keyframe = AsyncMock()
+            pipeline._generate_keyframe = keyframe
+            await pipeline.generate_frames_for_single_camera(
+                camera=camera,
+                shot_descriptions=shots,
+                characters=[],
+                character_portraits_registry={},
+                priority_shot_idxs=[],
+            )
+            keyframe.assert_awaited_once()
+            anchor = keyframe.await_args.kwargs["continuity_anchor"]
+            self.assertIsNotNone(anchor, "the new-camera composition reference was dropped")
+            return os.path.relpath(anchor[0], tmp), anchor[1]
+
+    async def test_resumed_camera_offers_new_camera_reference(self):
+        path, _ = await self._anchor_for(resume=True)
+        self.assertEqual(path, os.path.join("shots", "1", "new_camera_1.png"))
+
+    async def test_resume_matches_fresh(self):
+        self.assertEqual(await self._anchor_for(resume=True), await self._anchor_for(resume=False))
 
 
 if __name__ == "__main__":
