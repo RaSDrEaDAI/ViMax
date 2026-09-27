@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 from moviepy import VideoFileClip, concatenate_videoclips
 from PIL import Image
 from agents import *
+from agents.camera_image_generator import _validate_camera_tree
 import yaml
 from interfaces import *
 from langchain.chat_models import init_chat_model
@@ -665,6 +666,10 @@ class Script2VideoPipeline:
             with open(camera_tree_path, "r", encoding="utf-8") as f:
                 camera_tree = json.load(f)
             camera_tree = [Camera.model_validate(camera) for camera in camera_tree]
+            # A resumed run trusts this file as much as a fresh LLM answer, so it
+            # gets the same deadlock check: a cyclic tree on disk would otherwise
+            # hang frame generation forever instead of failing the render.
+            _validate_camera_tree(camera_tree)
             print(f"🚀 Loaded {len(camera_tree)} cameras from existing file.")
             return camera_tree
 

@@ -10,6 +10,7 @@ from scenedetect import open_video, SceneManager, split_video_ffmpeg
 from scenedetect.detectors import ContentDetector
 
 from interfaces import ShotDescription, ShotBriefDescription, Camera, ImageOutput, VideoOutput
+from utils.retry import after_func
 
 
 from moviepy import VideoFileClip
@@ -118,6 +119,11 @@ class CameraImageGenerator:
         self.video_generator = video_generator
 
 
+    # Bounded, and reraise=True so the ValueError from _validate_camera_tree
+    # (not a RetryError wrapper) is what surfaces after the last attempt. A
+    # rejected tree re-asks the model; before this there was no retry at all,
+    # and no validation, so a cyclic tree deadlocked frame generation.
+    @retry(stop=stop_after_attempt(3), after=after_func, reraise=True)
     async def construct_camera_tree(
         self,
         cameras: List[Camera],
@@ -140,13 +146,18 @@ class CameraImageGenerator:
 
         structured_model = self.chat_model.with_structured_output(CameraTreeResponse)
         response: CameraTreeResponse = await structured_model.ainvoke(messages)
+        if len(response.camera_parent_items) != len(cameras):
+            raise ValueError(
+                f"Camera tree response has {len(response.camera_parent_items)} items "
+                f"for {len(cameras)} cameras."
+            )
         for cam, parent_cam_item in zip(cameras, response.camera_parent_items):
             cam.parent_cam_idx = parent_cam_item.parent_cam_idx if parent_cam_item is not None else None
             cam.parent_shot_idx = parent_cam_item.parent_shot_idx if parent_cam_item is not None else None
             cam.reason = parent_cam_item.reason if parent_cam_item is not None else None
-            cam.parent_shot_idx = parent_cam_item.parent_shot_idx if parent_cam_item is not None else None
             cam.is_parent_fully_covers_child = parent_cam_item.is_parent_fully_covers_child if parent_cam_item is not None else None
             cam.missing_info = parent_cam_item.missing_info if parent_cam_item is not None else None
+        _validate_camera_tree(cameras)
         return cameras
 
 
@@ -217,3 +228,48 @@ class CameraImageGenerator:
             size="1600x900",
         )
         return image_output
+
+
+def _validate_camera_tree(cameras: List[Camera]) -> None:
+    """Reject parent assignments that would deadlock frame generation.
+
+    Frame generation for a camera awaits the first_frame event of its
+    parent_shot_idx, and that event is only set by the camera that owns the
+    shot. So a cycle (or a parent pointing at itself or at a nonexistent
+    camera) makes every camera in the loop wait forever with no error surfaced.
+
+    Beyond upstream (hkuds/vimax c061793): the wait keys on parent_shot_idx,
+    not parent_cam_idx, so the shot must actually belong to the named parent
+    camera — a shot owned by the child itself deadlocks just the same — and the
+    two fields must be set together. Every recorded tree under .working_dir
+    satisfies both, so this only rejects trees that could not have rendered.
+    """
+    by_idx = {cam.idx: cam for cam in cameras}
+    if len(by_idx) != len(cameras):
+        raise ValueError(f"Camera tree has duplicate camera indices: {[cam.idx for cam in cameras]}.")
+    for cam in cameras:
+        if (cam.parent_cam_idx is None) != (cam.parent_shot_idx is None):
+            raise ValueError(
+                f"Camera {cam.idx} has parent_cam_idx={cam.parent_cam_idx} but "
+                f"parent_shot_idx={cam.parent_shot_idx}; both must be set or both None."
+            )
+        if cam.parent_cam_idx is None:
+            continue
+        if cam.parent_cam_idx == cam.idx:
+            raise ValueError(f"Camera {cam.idx} lists itself as its parent.")
+        if cam.parent_cam_idx not in by_idx:
+            raise ValueError(f"Camera {cam.idx} references unknown parent camera {cam.parent_cam_idx}.")
+        if cam.parent_shot_idx not in by_idx[cam.parent_cam_idx].active_shot_idxs:
+            raise ValueError(
+                f"Camera {cam.idx} depends on shot {cam.parent_shot_idx}, which parent "
+                f"camera {cam.parent_cam_idx} does not film "
+                f"(its shots: {by_idx[cam.parent_cam_idx].active_shot_idxs})."
+            )
+    for cam in cameras:
+        seen = set()
+        current = cam
+        while current.parent_cam_idx is not None:
+            if current.idx in seen:
+                raise ValueError(f"Cycle detected in camera parent graph involving camera {current.idx}.")
+            seen.add(current.idx)
+            current = by_idx[current.parent_cam_idx]
