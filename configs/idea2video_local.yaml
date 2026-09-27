@@ -4,11 +4,11 @@
 
 chat_model:
   init_args:
-    model: claude-opus-4-1-20250805
+    model: claude-opus-4-8
     model_provider: anthropic
     api_key: ${ANTHROPIC_API_KEY}
-    max_tokens: 8192          # Anthropic requires explicit max_tokens; 8K is ample for all ViMax agents
-    temperature: 0.7          # slightly creative for story/screenplay; agents that need determinism override locally
+    max_tokens: 16384         # headroom for Opus 4.8's verbose extractions (was 8192, truncated character/shot planning). Opus 4.8 caps at 128K.
+    # NOTE: temperature is deprecated/rejected by claude-opus-4-8 (API 400). Do not set it.
   max_requests_per_minute: 40   # Anthropic Opus tier limits; ViMax rarely exceeds 20 concurrent
   max_requests_per_day: 2000
   # No text_only flag — Claude supports vision natively, so ReferenceImageSelector

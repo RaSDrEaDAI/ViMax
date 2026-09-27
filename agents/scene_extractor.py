@@ -104,6 +104,6 @@ class SceneExtractor:
             )
         ]
 
-        chain = self.chat_model | parser
-        scene = await chain.ainvoke(messages)
+        structured_model = self.chat_model.with_structured_output(Scene)
+        scene = await structured_model.ainvoke(messages)
         return scene

@@ -149,6 +149,17 @@ class Screenwriter:
         ]
         response = await self.chat_model.ainvoke(messages)
         story = response.content
+        if isinstance(story, list):
+            # Newer Anthropic models return a LIST of content blocks, not a str.
+            # Downstream consumers (design_storyboard's script.strip(), the
+            # synopsis slice) need plain text — join the text blocks.
+            parts = []
+            for block in story:
+                if isinstance(block, str):
+                    parts.append(block)
+                elif isinstance(block, dict) and block.get("type") == "text":
+                    parts.append(block.get("text", ""))
+            story = "\n".join(p for p in parts if p)
         return story
 
 

@@ -134,9 +134,9 @@ class EventExtractor:
             )
         ]
 
-        chain = self.chat_model | self.parser
+        structured_model = self.chat_model.with_structured_output(Event)
 
-        event: Event = chain.invoke(messages)
+        event: Event = structured_model.invoke(messages)
 
         assert event.index == len(extracted_events), f"Extracted event index {event.index} does not match the expected index {len(extracted_events)}"
 

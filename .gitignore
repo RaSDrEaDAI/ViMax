@@ -12,3 +12,17 @@ wheels/
 # working directory
 .working_dir/
 .test/
+
+# secrets and per-project assets
+configs/*_fal.yaml
+configs/*_local.yaml
+configs/*_secret.yaml
+.env
+.claude/
+projects/*/assets/*.safetensors
+projects/*/assets/*.png
+projects/*/assets/*.jpg
+projects/*/assets/*.webp
+projects/*/working_dir/
+projects/*/.fal_lora_url
+projects/*/_secrets.yaml

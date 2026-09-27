@@ -138,8 +138,8 @@ class CameraImageGenerator:
             HumanMessage(content=human_prompt_template_select_reference_camera.format(camera_seq_str=camera_seq_str)),
         ]
 
-        chain = self.chat_model | parser
-        response: CameraTreeResponse = await chain.ainvoke(messages)
+        structured_model = self.chat_model.with_structured_output(CameraTreeResponse)
+        response: CameraTreeResponse = await structured_model.ainvoke(messages)
         for cam, parent_cam_item in zip(cameras, response.camera_parent_items):
             cam.parent_cam_idx = parent_cam_item.parent_cam_idx if parent_cam_item is not None else None
             cam.parent_shot_idx = parent_cam_item.parent_shot_idx if parent_cam_item is not None else None

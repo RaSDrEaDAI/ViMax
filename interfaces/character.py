@@ -17,15 +17,17 @@ class CharacterInScene(BaseModel):
         description="Indicates whether the character is visible in this scene",
         examples=[True, False],
     )
-    static_features: str = Field(
-        description="The static features of the character in this specific scene, such as facial features and body shape that remain constant or are rarely changed. If the character is not visible, this field can be left empty.",
+    static_features: Optional[str] = Field(
+        default=None,
+        description="The static features of the character in this specific scene, such as facial features and body shape that remain constant or are rarely changed. If the character is not visible, this field should be null.",
         examples=[
             "Alice has long blonde hair and blue eyes, and is of slender build.",
             "Bob the Builder is a middle-aged man with a sturdy build.",
         ]
     )
-    dynamic_features: str = Field(
-        description="The dynamic features of the character in this specific scene, such as clothing and accessories that may change from scene to scene. If not mentioned, this field can be left empty. If the character is not visible, this field should be None.",
+    dynamic_features: Optional[str] = Field(
+        default=None,
+        description="The dynamic features of the character in this specific scene, such as clothing and accessories that may change from scene to scene. If not mentioned or the character is not visible, this field should be null.",
         examples=[
             "Wearing a red scarf and a black leather jacket",
         ]

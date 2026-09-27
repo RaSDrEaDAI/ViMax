@@ -139,9 +139,41 @@ class ReferenceImageSelector:
     def __init__(
         self,
         chat_model,
+        text_only: bool = False,
     ):
-
+        # text_only=True skips the multimodal vision pass; required when the
+        # chat model is text-only (e.g. z.ai Coding Plan endpoint, which
+        # rejects image inputs with error 1210). The text-only first pass
+        # selects from descriptions alone, which is sufficient for small
+        # portrait sets and lossy for very large ones.
         self.chat_model = chat_model
+        self.text_only = text_only
+
+
+    async def _run_text_only(
+        self,
+        available_image_path_and_text_pairs: List[Tuple[str, str]],
+        frame_description: str,
+    ):
+        human_content = []
+        for idx, (_, text) in enumerate(available_image_path_and_text_pairs):
+            human_content.append({
+                "type": "text",
+                "text": f"Image {idx}: {text}"
+            })
+        human_content.append({
+            "type": "text",
+            "text": human_prompt_template_select_reference_images.format(frame_description=frame_description)
+        })
+        parser = PydanticOutputParser(pydantic_object=RefImageIndicesAndTextPrompt)
+        messages = [
+            SystemMessage(content=system_prompt_template_select_reference_images_only_text.format(format_instructions=parser.get_format_instructions())),
+            HumanMessage(content=human_content)
+        ]
+        # Native structured output (tool-calling); parser retained only to keep
+        # the schema description in the prompt. No OutputParserException path.
+        structured_model = self.chat_model.with_structured_output(RefImageIndicesAndTextPrompt)
+        return await structured_model.ainvoke(messages)
 
 
     @retry(
@@ -153,34 +185,25 @@ class ReferenceImageSelector:
         available_image_path_and_text_pairs: List[Tuple[str, str]],
         frame_description: str,
     ):
+        # Text-only path: one pass on descriptions alone. No multimodal call.
+        if self.text_only:
+            response = await self._run_text_only(available_image_path_and_text_pairs, frame_description)
+            reference_image_path_and_text_pairs = [
+                available_image_path_and_text_pairs[i] for i in response.ref_image_indices
+            ]
+            return {
+                "reference_image_path_and_text_pairs": reference_image_path_and_text_pairs,
+                "text_prompt": response.text_prompt,
+            }
+
         filtered_image_path_and_text_pairs = available_image_path_and_text_pairs
 
         # 1. filter images using text-only model
         if len(available_image_path_and_text_pairs) >= 8:
-            human_content = []
-            for idx, (_, text) in enumerate(available_image_path_and_text_pairs):
-                human_content.append({
-                    "type": "text",
-                    "text": f"Image {idx}: {text}"
-                })
-            human_content.append({
-                "type": "text",
-                "text": human_prompt_template_select_reference_images.format(frame_description=frame_description)
-            })
-            parser = PydanticOutputParser(pydantic_object=RefImageIndicesAndTextPrompt)
-
-            messages = [
-                SystemMessage(content=system_prompt_template_select_reference_images_only_text.format(format_instructions=parser.get_format_instructions())),
-                HumanMessage(content=human_content)
-            ]
-
-            chain = self.chat_model | parser
-
             try:
-                ref = await chain.ainvoke(messages)
+                ref = await self._run_text_only(available_image_path_and_text_pairs, frame_description)
                 filtered_image_path_and_text_pairs = [available_image_path_and_text_pairs[i] for i in ref.ref_image_indices]
                 logging.info(f"Filtered image idx:{ref.ref_image_indices}")
-                
             except Exception as e:
                 logging.error(f"Error get image prompt: \n{e}")
                 raise e
@@ -208,10 +231,10 @@ class ReferenceImageSelector:
             HumanMessage(content=human_content)
         ]
 
-        chain = self.chat_model | parser
+        structured_model = self.chat_model.with_structured_output(RefImageIndicesAndTextPrompt)
 
         try:
-            response = await chain.ainvoke(messages)        
+            response = await structured_model.ainvoke(messages)
             reference_image_path_and_text_pairs = [filtered_image_path_and_text_pairs[i] for i in response.ref_image_indices]
             return {
                 "reference_image_path_and_text_pairs": reference_image_path_and_text_pairs,

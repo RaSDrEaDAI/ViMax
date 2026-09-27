@@ -5,7 +5,7 @@ from typing import List, Tuple, Dict, Optional
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain.chat_models import init_chat_model
 from pydantic import BaseModel, Field
-from langchain.output_parsers import PydanticOutputParser
+from langchain_core.output_parsers import PydanticOutputParser
 from interfaces import Event, Scene
 from interfaces import CharacterInScene, CharacterInEvent, CharacterInNovel
 from tenacity import retry, stop_after_attempt
@@ -190,8 +190,8 @@ class GlobalInformationPlanner:
             )
         ]
 
-        chain = self.chat_model | parser
-        response: MergeCharactersAcrossScenesInEventResponse = await chain.ainvoke(messages)
+        structured_model = self.chat_model.with_structured_output(MergeCharactersAcrossScenesInEventResponse)
+        response: MergeCharactersAcrossScenesInEventResponse = await structured_model.ainvoke(messages)
         characters_in_event = response.characters
 
         # check the output is valid
@@ -252,8 +252,8 @@ class GlobalInformationPlanner:
             )
         ]
 
-        chain = self.chat_model | parser
-        response: MergeCharactersToExistingCharactersInNovelResponse = chain.invoke(messages)
+        structured_model = self.chat_model.with_structured_output(MergeCharactersToExistingCharactersInNovelResponse)
+        response: MergeCharactersToExistingCharactersInNovelResponse = structured_model.invoke(messages)
 
         for character in response.characters:
             if character.index_in_novel == -1:

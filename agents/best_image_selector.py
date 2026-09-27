@@ -134,9 +134,9 @@ class BestImageSelector:
             HumanMessage(content=human_content)
         ]
 
-        chain = self.chat_model | parser
+        structured_model = self.chat_model.with_structured_output(BestImageResponse)
 
-        response = await chain.ainvoke(messages)
+        response = await structured_model.ainvoke(messages)
         idx = response.best_image_index
         if not isinstance(idx, int) or idx < 0 or idx >= len(candidate_image_paths):
             logging.warning(f"Received invalid best_image_index={idx}; defaulting to 0")

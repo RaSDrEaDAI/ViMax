@@ -1,9 +1,9 @@
+import json
 import logging
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import PydanticOutputParser
 from langchain.chat_models.base import BaseChatModel
 from langchain.chat_models import init_chat_model
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List
 from tenacity import retry, stop_after_attempt
 from interfaces import CharacterInScene
@@ -31,7 +31,9 @@ Her finger traces the rim of the ceramic mug, following the imperfect circle ove
 </SCRIPT>
 
 [Output]
-{format_instructions}
+Return the structured list of characters. Populate every field for each character.
+For static/dynamic visual features, describe what is visible; if the character is
+not visible in the scene, leave those feature fields null.
 
 
 [Guidelines]
@@ -59,6 +61,19 @@ class ExtractCharactersResponse(BaseModel):
         ..., description="A list of characters extracted from the script."
     )
 
+    @field_validator("characters", mode="before")
+    @classmethod
+    def _unwrap_stringified_payload(cls, v):
+        # The model sometimes tool-calls with this field set to the WHOLE
+        # response JSON as a string ('{"characters":[...]}') instead of the
+        # list itself — deterministically, so every tenacity retry failed the
+        # same way. Unwrap instead of failing.
+        if isinstance(v, str):
+            v = json.loads(v)
+        if isinstance(v, dict) and "characters" in v:
+            v = v["characters"]
+        return v
+
 
 
 class CharacterExtractor:
@@ -74,16 +89,20 @@ class CharacterExtractor:
     )
     async def extract_characters(self, script: str) -> List[CharacterInScene]:
 
-        parser = PydanticOutputParser(pydantic_object=ExtractCharactersResponse)
-        
+        # Native structured output (Anthropic tool-calling under the hood). This
+        # replaces the free-text JSON parser (PydanticOutputParser), which was
+        # brittle: Opus 4.8 returns valid-but-verbose JSON that could truncate
+        # under a low max_tokens or trip schema rigidity (e.g. null features for
+        # invisible characters). with_structured_output has no OutputParserException
+        # path — the model is constrained to the schema at the tool-call layer.
+        structured_model = self.chat_model.with_structured_output(ExtractCharactersResponse)
+
         messages = [
-            SystemMessage(content=system_prompt_template_extract_characters.format(format_instructions=parser.get_format_instructions())),
+            SystemMessage(content=system_prompt_template_extract_characters),
             HumanMessage(content=human_prompt_template_extract_characters.format(script=script)),
         ]
 
-        chain = self.chat_model | parser
-
-        response: ExtractCharactersResponse = await chain.ainvoke(messages)
+        response: ExtractCharactersResponse = await structured_model.ainvoke(messages)
 
         return response.characters
 
