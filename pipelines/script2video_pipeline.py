@@ -234,7 +234,7 @@ class Script2VideoPipeline:
             shot_descriptions=shot_descriptions,
         )
 
-        priority_shot_idxs = [camera.parent_cam_idx for camera in camera_tree if camera.parent_cam_idx is not None]
+        priority_shot_idxs = _collect_priority_shot_idxs(camera_tree)
         tasks = [
             self.generate_frames_for_single_camera(
                 camera=camera,
@@ -673,12 +673,7 @@ class Script2VideoPipeline:
             print(f"🚀 Loaded {len(camera_tree)} cameras from existing file.")
             return camera_tree
 
-        cameras: List[Camera] = []
-        for shot_description in shot_descriptions:
-            if shot_description.cam_idx not in [camera.idx for camera in cameras]:
-                cameras.append(Camera(idx=shot_description.cam_idx, active_shot_idxs=[shot_description.idx]))
-            else:
-                cameras[shot_description.cam_idx].active_shot_idxs.append(shot_description.idx)
+        cameras = _group_shots_into_cameras(shot_descriptions)
 
         camera_tree = await self.camera_image_generator.construct_camera_tree(cameras=cameras, shot_descs=shot_descriptions)
         with open(camera_tree_path, "w", encoding="utf-8") as f:
@@ -1115,3 +1110,35 @@ class Script2VideoPipeline:
             }
 
         return shot_description
+
+
+def _group_shots_into_cameras(shot_descriptions: List[ShotDescription]) -> List[Camera]:
+    """Group shots by their camera index.
+
+    Cameras are looked up by their idx field, not by list position: cameras are
+    appended in order of first appearance, so positional indexing attached
+    shots to the wrong camera (or raised IndexError) whenever the LLM emitted
+    cam indices out of order. Port of hkuds/vimax df1480d.
+    """
+    cameras: List[Camera] = []
+    cameras_by_idx: Dict[int, Camera] = {}
+    for shot_description in shot_descriptions:
+        camera = cameras_by_idx.get(shot_description.cam_idx)
+        if camera is None:
+            camera = Camera(idx=shot_description.cam_idx, active_shot_idxs=[shot_description.idx])
+            cameras_by_idx[shot_description.cam_idx] = camera
+            cameras.append(camera)
+        else:
+            camera.active_shot_idxs.append(shot_description.idx)
+    return cameras
+
+
+def _collect_priority_shot_idxs(camera_tree: List[Camera]) -> List[int]:
+    """Shot indices that other cameras depend on.
+
+    Compared against shot idxs in generate_frames_for_single_camera, so they
+    must come from parent_shot_idx; collecting parent_cam_idx (camera index
+    space) meant the shots a child camera waits on were never actually
+    prioritized. Port of hkuds/vimax df1480d.
+    """
+    return [camera.parent_shot_idx for camera in camera_tree if camera.parent_shot_idx is not None]
