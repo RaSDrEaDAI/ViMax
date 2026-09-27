@@ -18,8 +18,12 @@ class VideoGeneratorVeoGoogleAPI:
         ff2v_model: str = "veo-3.1-generate-preview",
         flf2v_model: str = "veo-3.1-generate-preview",
         rate_limiter: Optional[RateLimiter] = None,
+        poll_interval: int = 2,
+        max_poll_attempts: int = 300,
     ):
         self.api_key = api_key
+        self.poll_interval = poll_interval
+        self.max_poll_attempts = max_poll_attempts
         self.t2v_model = t2v_model
         self.ff2v_model = ff2v_model
         self.flf2v_model = flf2v_model
@@ -83,10 +87,17 @@ class VideoGeneratorVeoGoogleAPI:
                 else:
                     raise
 
+        polls = 0
         while not operation.done:
-            await asyncio.sleep(2)
+            if polls >= self.max_poll_attempts:
+                raise TimeoutError(
+                    f"Veo operation did not complete after {polls} polls "
+                    f"({polls * self.poll_interval}s)."
+                )
+            polls += 1
+            await asyncio.sleep(self.poll_interval)
             operation = self.client.operations.get(operation)
-            logging.info(f"Video generation not completed, waiting 2 seconds...")
+            logging.info(f"Video generation not completed, waiting {self.poll_interval} seconds...")
 
         # Check if operation completed successfully
         if operation.error:

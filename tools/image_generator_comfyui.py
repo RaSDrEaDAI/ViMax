@@ -118,28 +118,26 @@ class ImageGeneratorComfyUI:
                 # slot — the extra input is harmless to models that ignore it,
                 # and it satisfies the validator.
                 if first_upload is not None:
-                    n = refs_set + 1
-                    while True:
+                    # A workflow cannot have more "Reference Image N" slots than
+                    # nodes, so len(workflow) bounds the scan explicitly.
+                    for n in range(refs_set + 1, len(workflow) + 2):
                         title = f"Reference Image {n}" if n > 1 else "Reference Image"
                         if find_node_by_title(workflow, title) is None:
                             break
                         set_node_input(workflow, title, "image", first_upload)
                         logging.info(f"Filled unused ref slot '{title}' with first image to pass validation")
-                        n += 1
             else:
                 uploaded = await self.client.upload_image(reference_image_paths[0])
                 set_node_input(workflow, "Reference Image", "image", uploaded)
                 # Same clearing logic for the single-ref case — workflow may
                 # still have "Reference Image 2" / "Reference Image 3" slots
                 # with bad defaults.
-                n = 2
-                while True:
+                for n in range(2, len(workflow) + 2):
                     title = f"Reference Image {n}"
                     if find_node_by_title(workflow, title) is None:
                         break
                     set_node_input(workflow, title, "image", uploaded)
                     logging.info(f"Filled unused ref slot '{title}' with first image to pass validation")
-                    n += 1
 
         # Prompt injection. Field name differs by node class:
         #   CLIPTextEncode          -> "text"

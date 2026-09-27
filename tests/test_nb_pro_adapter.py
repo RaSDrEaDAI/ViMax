@@ -57,8 +57,8 @@ class _FakeFalClient:
         self.uploads.append(path)
         return f"https://fal.media/uploaded/{os.path.basename(path)}"
 
-    async def subscribe_async(self, model, arguments=None, with_logs=False):
-        self.calls.append({"model": model, "arguments": arguments})
+    async def subscribe_async(self, model, arguments=None, with_logs=False, client_timeout=None):
+        self.calls.append({"model": model, "arguments": arguments, "client_timeout": client_timeout})
         if self._raises is not None:
             raise self._raises
         return self._result

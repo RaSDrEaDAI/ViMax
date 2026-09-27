@@ -139,8 +139,10 @@ class ImageGeneratorNanoBananaProFalAI:
         max_reference_images: int = 6,
         working_dir: Optional[str] = None,
         rate_limiter: Optional[RateLimiter] = None,
+        client_timeout: float = 600.0,
     ):
         os.environ["FAL_KEY"] = api_key
+        self.client_timeout = client_timeout
         self.t2i_model = t2i_model
         self.i2i_model = i2i_model
 
@@ -288,10 +290,16 @@ class ImageGeneratorNanoBananaProFalAI:
         """Retry transport errors (5/10/20s). NEVER retry a safety refusal."""
         for attempt in range(max_retries):
             try:
+                # fal's subscribe_async waits indefinitely without client_timeout.
+                # A timeout is NOT retried: the retry would resubmit (and re-bill)
+                # a paid NB Pro job that may still be running on fal's side.
                 result = await fal_client.subscribe_async(
                     model, arguments=arguments, with_logs=False,
+                    client_timeout=self.client_timeout,
                 )
                 return result if isinstance(result, dict) else dict(result)
+            except TimeoutError:
+                raise
             except Exception as e:
                 if is_nb_safety_refusal(e):
                     detail = fal_error_detail(e)

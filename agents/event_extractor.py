@@ -92,6 +92,11 @@ class EventExtractor:
         self.parser = PydanticOutputParser(pydantic_object=Event)
 
 
+    # Cap on extracted events: is_last is asserted by the LLM only, so without a
+    # bound a model that never sets it would loop (and spend tokens) forever.
+    # Port of hkuds/vimax c061793.
+    max_events = 50
+
     def __call__(
         self,
         novel_text: str,
@@ -100,6 +105,11 @@ class EventExtractor:
 
         events = []
         while True:
+            if len(events) >= self.max_events:
+                raise RuntimeError(
+                    f"Event extraction exceeded the maximum of {self.max_events} events "
+                    "without an is_last marker; aborting to avoid unbounded LLM calls."
+                )
             event = self.extract_next_event(novel_text, events)
 
             events.append(event)

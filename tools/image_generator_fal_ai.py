@@ -49,11 +49,13 @@ class ImageGeneratorFalAI:
         t2i_model: str = "fal-ai/nano-banana",
         i2i_model: str = "fal-ai/nano-banana/edit",
         rate_limiter: Optional[RateLimiter] = None,
+        client_timeout: float = 600.0,
     ):
         os.environ["FAL_KEY"] = api_key
         self.t2i_model = t2i_model
         self.i2i_model = i2i_model
         self.rate_limiter = rate_limiter
+        self.client_timeout = client_timeout
 
     async def generate_single_image(
         self,
@@ -94,12 +96,18 @@ class ImageGeneratorFalAI:
         max_retries = 3
         for attempt in range(max_retries):
             try:
+                # fal's subscribe_async waits indefinitely without client_timeout.
+                # A timeout is NOT retried: the retry would resubmit (and re-bill)
+                # a job that may still be running on fal's side.
                 result = await fal_client.subscribe_async(
                     model,
                     arguments=arguments,
                     with_logs=False,
+                    client_timeout=self.client_timeout,
                 )
                 break
+            except TimeoutError:
+                raise
             except Exception as e:
                 if attempt < max_retries - 1:
                     wait = 5 * (2 ** attempt)

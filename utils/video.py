@@ -1,6 +1,6 @@
 import logging
 import requests
-from tenacity import retry
+from utils.retry import download_retry
 
 
 def concatenate_shot_videos(
@@ -52,12 +52,12 @@ def concatenate_shot_videos(
     return out_path
 
 
-@retry
+@download_retry
 def download_video(url, save_path):
     try:
         logging.info(f"Downloading video from {url} to {save_path}")
 
-        response = requests.get(url, stream=True)
+        response = requests.get(url, stream=True, timeout=(10, 300))
         response.raise_for_status()  # 检查请求是否成功
     
         with open(save_path, 'wb') as f:

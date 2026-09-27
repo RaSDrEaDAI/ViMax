@@ -14,6 +14,9 @@ class VideoGeneratorVeoYunwuAPI:
         t2v_model: str = "veo3.1-fast",  # text to video
         ff2v_model: str = "veo3.1-fast",   # first frame to video
         flf2v_model: str = "veo2-fast-frames",  # first and last frame to video
+        max_create_attempts: int = 3,
+        poll_interval: int = 2,
+        max_poll_attempts: int = 300,
     ):
         """
         all models:
@@ -36,6 +39,9 @@ class VideoGeneratorVeoYunwuAPI:
         self.t2v_model = t2v_model
         self.ff2v_model = ff2v_model
         self.flf2v_model = flf2v_model
+        self.max_create_attempts = max_create_attempts
+        self.poll_interval = poll_interval
+        self.max_poll_attempts = max_poll_attempts
 
     async def generate_single_video(
         self,
@@ -74,19 +80,39 @@ class VideoGeneratorVeoYunwuAPI:
 
 
         url = f"https://yunwu.ai/v1/video/create"
-        while True:
+        task_id = None
+        last_error = None
+        for attempt in range(1, self.max_create_attempts + 1):
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.post(url, headers=headers, json=payload) as response:
-                        response = await response.json()
-                        logging.debug(f"Response: {response}")
-                        task_id = response["id"]
-                        logging.info(f"Video generation task created successfully. Task ID: {task_id}")
+                        response_json = await response.json()
+                        http_status = response.status
+                logging.debug(f"Response: {response_json}")
             except Exception as e:
-                logging.error(f"Error occurred while creating video generation task: {e}. Retrying in 1 second...")
-                await asyncio.sleep(1)
+                last_error = e
+                logging.error(f"Error occurred while creating video generation task (attempt {attempt}/{self.max_create_attempts}): {e}")
+                if attempt < self.max_create_attempts:
+                    await asyncio.sleep(attempt)
                 continue
+
+            if http_status >= 400:
+                message = f"Video generation task creation failed with HTTP {http_status}: {response_json}"
+                if http_status < 500:
+                    raise RuntimeError(message)
+                last_error = RuntimeError(message)
+                logging.error(f"{message} (attempt {attempt}/{self.max_create_attempts})")
+                if attempt < self.max_create_attempts:
+                    await asyncio.sleep(attempt)
+                continue
+
+            task_id = response_json.get("id")
+            if not task_id:
+                raise RuntimeError(f"Video generation task creation returned no task id: {response_json}")
+            logging.info(f"Video generation task created successfully. Task ID: {task_id}")
             break
+        if task_id is None:
+            raise RuntimeError(f"Failed to create video generation task after {self.max_create_attempts} attempts.") from last_error
 
 
         # 2. Query the video generation task until the video generation is completed
@@ -95,26 +121,42 @@ class VideoGeneratorVeoYunwuAPI:
             'Authorization': f'Bearer {self.api_key}',
         }
 
+        attempts = 0
+        consecutive_errors = 0
         while True:
+            if attempts >= self.max_poll_attempts:
+                raise TimeoutError(f"Video generation task {task_id} did not complete after {attempts} polls.")
+            attempts += 1
+
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.get(f"{self.base_url}/v1/video/query?id={task_id}", headers=headers) as response:
                         payload = await response.json()
-                        logging.debug(f"Response: {payload}")
-                        status = payload["status"]
+                        http_status = response.status
+                logging.debug(f"Response: {payload}")
             except Exception as e:
-                logging.error(f"Error occurred while querying video generation task: {e}. Retrying in 1 second...")
-                await asyncio.sleep(1)
+                consecutive_errors += 1
+                if consecutive_errors >= 5:
+                    raise RuntimeError(f"Querying video generation task {task_id} failed {consecutive_errors} times in a row.") from e
+                logging.error(f"Error occurred while querying video generation task: {e}. Retrying in {self.poll_interval} seconds...")
+                await asyncio.sleep(self.poll_interval)
                 continue
+            consecutive_errors = 0
 
+            if http_status >= 400:
+                raise RuntimeError(f"Querying video generation task {task_id} failed with HTTP {http_status}: {payload}")
+
+            status = payload.get("status")
             if status == "completed":
                 logging.info(f"Video generation completed successfully")
                 video_url = payload["video_url"]
                 return VideoOutput(fmt="url", ext="mp4", data=video_url)
             elif status == "failed":
+                # Used to `break` out of the loop and fall off the end of the
+                # function, returning None to a caller that then crashed far
+                # from the cause.
                 logging.error(f"Video generation failed: \n{payload}")
-                break
+                raise RuntimeError(f"Video generation task {task_id} failed: {payload}")
             else:
-                logging.info(f"Video generation status: {status}, waiting 1 second...")
-                await asyncio.sleep(1)
-                continue
+                logging.info(f"Video generation status: {status}, waiting {self.poll_interval} seconds...")
+                await asyncio.sleep(self.poll_interval)

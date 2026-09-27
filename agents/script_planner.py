@@ -4,7 +4,9 @@ from langchain_core.output_parsers import PydanticOutputParser
 from langchain.chat_models import init_chat_model
 from pydantic import BaseModel, Field
 from typing import List, Optional, Literal
-from tenacity import retry
+from tenacity import retry, stop_after_attempt
+
+from utils.retry import after_func
 
 
 narrative_script_prompt_template = \
@@ -341,7 +343,8 @@ class ScriptPlanner:
             api_key=api_key,
         )
 
-    @retry
+    # Was bare @retry: retry forever, no wait, around an LLM call.
+    @retry(stop=stop_after_attempt(3), after=after_func, reraise=True)
     def plan_script(
         self,
         basic_idea: str,

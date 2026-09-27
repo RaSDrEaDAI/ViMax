@@ -122,6 +122,7 @@ class Novel2MoviePipeline(BasePipeline):
             print("🔖 Starting event extraction ...")
 
         while len(extracted_events) == 0 or not extracted_events[-1].is_last:
+            _ensure_extraction_cap(len(extracted_events), MAX_EXTRACTED_EVENTS, "events")
             next_event = self.event_extractor.extract_next_event(
                 novel_text=compressed_novel,
                 extracted_events=extracted_events,
@@ -265,6 +266,7 @@ class Novel2MoviePipeline(BasePipeline):
                 os.makedirs(os.path.join(working_dir_scene_extractor, f"event_{event.index}"), exist_ok=True)
 
                 while len(previous_scenes) == 0 or not previous_scenes[-1].is_last:
+                    _ensure_extraction_cap(len(previous_scenes), MAX_SCENES_PER_EVENT, "scenes")
                     next_scene = await self.scene_extractor.get_next_scene(
                         relevant_chunks=relevant_chunks,
                         event=event,
@@ -540,3 +542,18 @@ class Novel2MoviePipeline(BasePipeline):
                 )
                 print(f"✅ Generated video for event {event.index}, scene {scene.idx}, saved to {scene_video_dir}")
         print("📋 Step 7: Generate the video for each scene".center(80, "-"))
+
+
+# is_last flags are asserted by the LLM only; cap the extraction loops so a
+# model that never sets one cannot spend tokens forever. Port of hkuds/vimax
+# c061793.
+MAX_EXTRACTED_EVENTS = 50
+MAX_SCENES_PER_EVENT = 30
+
+
+def _ensure_extraction_cap(count: int, cap: int, what: str) -> None:
+    if count >= cap:
+        raise RuntimeError(
+            f"Extraction reached {count} {what} without an is_last marker (cap: {cap}); "
+            "aborting to avoid unbounded LLM calls."
+        )

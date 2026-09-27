@@ -89,6 +89,8 @@ class ComfyUIClient:
         base_url: ComfyUI server, e.g. http://127.0.0.1:8189.
         client_id: Stable client UUID; generated if not given.
         request_timeout: HTTP request timeout in seconds.
+        max_consecutive_poll_http_errors: consecutive non-200 /history answers
+            before wait_for_completion gives up (default 15 = ~30s at 2s polls).
     """
 
     def __init__(
@@ -96,10 +98,12 @@ class ComfyUIClient:
         base_url: str = "http://127.0.0.1:8189",
         client_id: Optional[str] = None,
         request_timeout: float = 1800.0,
+        max_consecutive_poll_http_errors: int = 15,
     ):
         self.base_url = base_url.rstrip("/")
         self.client_id = client_id or str(uuid.uuid4())
         self.request_timeout = request_timeout
+        self.max_consecutive_poll_http_errors = max_consecutive_poll_http_errors
 
     async def ping(self) -> bool:
         try:
@@ -180,15 +184,16 @@ class ComfyUIClient:
         url = f"{self.base_url}/history/{prompt_id}"
         elapsed = 0.0
         consecutive_conn_errors = 0
+        consecutive_http_errors = 0
         while True:
+            http_error = None
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.get(url, timeout=30) as resp:
                         if resp.status != 200:
-                            await asyncio.sleep(poll_interval)
-                            elapsed += poll_interval
-                            continue
-                        data = await resp.json()
+                            http_error = f"HTTP {resp.status}: {(await resp.text())[:300]}"
+                        else:
+                            data = await resp.json()
                 consecutive_conn_errors = 0  # reset on any successful HTTP exchange
             except _RETRYABLE_EXC as e:
                 # Transient connection error — ComfyUI hiccupped or restarting.
@@ -209,6 +214,29 @@ class ComfyUIClient:
                         f"(last connection error: {type(e).__name__}: {e})"
                     )
                 continue
+
+            # Non-200 used to `continue` straight past the deadline check below,
+            # so a server answering 4xx/5xx forever (e.g. a proxy 401 loop) hung
+            # the render. Not raised on the FIRST 4xx: the ZeroTier auth proxy
+            # 401s intermittently, and one of those must not kill a long render.
+            # Handled out here, not inside the try: _RETRYABLE_EXC includes
+            # asyncio.TimeoutError, which would swallow our own TimeoutError.
+            if http_error is not None:
+                consecutive_http_errors += 1
+                if consecutive_http_errors >= self.max_consecutive_poll_http_errors:
+                    raise RuntimeError(
+                        f"ComfyUI /history for prompt {prompt_id} answered non-200 "
+                        f"{consecutive_http_errors} times in a row (last: {http_error})"
+                    )
+                await asyncio.sleep(poll_interval)
+                elapsed += poll_interval
+                if elapsed >= self.request_timeout:
+                    raise TimeoutError(
+                        f"ComfyUI prompt {prompt_id} did not complete in {self.request_timeout}s "
+                        f"(last response: {http_error})"
+                    )
+                continue
+            consecutive_http_errors = 0
 
             if prompt_id in data:
                 entry = data[prompt_id]

@@ -46,12 +46,14 @@ class VideoGeneratorFalAI:
         ff2v_model: str = "fal-ai/veo3/fast/image-to-video",
         flf2v_model: Optional[str] = None,
         rate_limiter: Optional[RateLimiter] = None,
+        client_timeout: float = 1800.0,
     ):
         os.environ["FAL_KEY"] = api_key
         self.t2v_model = t2v_model
         self.ff2v_model = ff2v_model
         self.flf2v_model = flf2v_model
         self.rate_limiter = rate_limiter
+        self.client_timeout = client_timeout
 
     async def generate_single_video(
         self,
@@ -109,12 +111,18 @@ class VideoGeneratorFalAI:
         max_retries = 3
         for attempt in range(max_retries):
             try:
+                # fal's subscribe_async waits indefinitely without client_timeout.
+                # A timeout is NOT retried: the retry would resubmit (and re-bill)
+                # a job that may still be running on fal's side.
                 result = await fal_client.subscribe_async(
                     model,
                     arguments=arguments,
                     with_logs=False,
+                    client_timeout=self.client_timeout,
                 )
                 break
+            except TimeoutError:
+                raise
             except Exception as e:
                 if attempt < max_retries - 1:
                     wait = 10 * (2 ** attempt)
