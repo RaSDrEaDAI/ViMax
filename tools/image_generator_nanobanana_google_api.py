@@ -50,26 +50,30 @@ class ImageGeneratorNanobananaGoogleAPI:
         max_retries = 3
         retry_delay = 5
 
-        for attempt in range(max_retries):
-            try:
-                response = await self.client.aio.models.generate_content(
-                    model=self.model,
-                    contents=reference_images + [prompt],
-                    config=types.GenerateContentConfig(
-                        response_modalities=["IMAGE"],
-                        image_config=types.ImageConfig(
-                            aspect_ratio=aspect_ratio,
+        try:
+            for attempt in range(max_retries):
+                try:
+                    response = await self.client.aio.models.generate_content(
+                        model=self.model,
+                        contents=reference_images + [prompt],
+                        config=types.GenerateContentConfig(
+                            response_modalities=["IMAGE"],
+                            image_config=types.ImageConfig(
+                                aspect_ratio=aspect_ratio,
+                            ),
                         ),
-                    ),
-                )
-                break
-            except ClientError as e:
-                if e.status_code == 429 and attempt < max_retries - 1:
-                    wait_time = retry_delay * (2 ** attempt)
-                    logging.warning(f"Rate limit hit (429), retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
-                    await asyncio.sleep(wait_time)
-                else:
-                    raise
+                    )
+                    break
+                except ClientError as e:
+                    if e.status_code == 429 and attempt < max_retries - 1:
+                        wait_time = retry_delay * (2 ** attempt)
+                        logging.warning(f"Rate limit hit (429), retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                        await asyncio.sleep(wait_time)
+                    else:
+                        raise
+        finally:
+            for reference_image in reference_images:
+                reference_image.close()
 
         image = None
         text = ""

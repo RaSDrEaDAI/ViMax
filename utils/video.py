@@ -34,8 +34,14 @@ def concatenate_shot_videos(
     # that never concatenate, and moviepy is a heavy import.
     from moviepy import VideoFileClip, concatenate_videoclips
 
-    clips = [VideoFileClip(path) for path in video_paths]
+    # Opened INSIDE the try (upstream 333b5f4 shape): a list comprehension
+    # outside it leaked every reader already opened when a later path failed
+    # to open. The concatenated clip is closed too — it was never closed.
+    clips = []
+    final_video = None
     try:
+        for path in video_paths:
+            clips.append(VideoFileClip(path))
         final_video = concatenate_videoclips(clips)
         final_video.write_videofile(
             out_path, codec=codec, preset=preset, logger=None,
@@ -44,7 +50,7 @@ def concatenate_shot_videos(
         # Release the ffmpeg readers even if the write fails. Without this a
         # failed concat leaves file handles open, and on Windows that blocks the
         # retry from overwriting the very files it needs.
-        for clip in clips:
+        for clip in ([final_video] if final_video is not None else []) + clips:
             try:
                 clip.close()
             except Exception:  # noqa: BLE001

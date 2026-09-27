@@ -42,16 +42,20 @@ class ImageGeneratorNanobananaYunwuAPI:
 
         reference_images = [Image.open(path) for path in reference_image_paths]
 
-        response = await self.client.aio.models.generate_content(
-            model=self.model,
-            contents=reference_images + [prompt],
-            config=types.GenerateContentConfig(
-                response_modalities=["IMAGE"],
-                image_config=types.ImageConfig(
-                    aspect_ratio=aspect_ratio,
+        try:
+            response = await self.client.aio.models.generate_content(
+                model=self.model,
+                contents=reference_images + [prompt],
+                config=types.GenerateContentConfig(
+                    response_modalities=["IMAGE"],
+                    image_config=types.ImageConfig(
+                        aspect_ratio=aspect_ratio,
+                    ),
                 ),
-            ),
-        )
+            )
+        finally:
+            for reference_image in reference_images:
+                reference_image.close()
 
         image = None
         text = ""

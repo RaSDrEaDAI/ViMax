@@ -6,7 +6,6 @@ from interfaces import CharacterInScene, SeedAsset
 from typing import List, Dict, Optional, Union
 import asyncio
 import json
-from moviepy import VideoFileClip, concatenate_videoclips
 import yaml
 from langchain.chat_models import init_chat_model
 from tools.render_backend import RenderBackend, _load_dotenv, _substitute_env_vars

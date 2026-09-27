@@ -153,28 +153,30 @@ def main():
     branded_dir = working / "branded"
     branded_dir.mkdir(parents=True, exist_ok=True)
 
-    raw = VideoFileClip(str(final_path))
-    fps = raw.fps or 24
-    trimmed_dur = max(0.1, raw.duration - TRIM_FRAMES / fps)
-    trimmed = raw.subclipped(0, trimmed_dur)
+    # Context-managed so the ffmpeg reader is released even when a variant
+    # write fails (upstream 333b5f4 media-handle hygiene).
+    with VideoFileClip(str(final_path)) as raw:
+        fps = raw.fps or 24
+        trimmed_dur = max(0.1, raw.duration - TRIM_FRAMES / fps)
+        trimmed = raw.subclipped(0, trimmed_dur)
 
-    logo = _load_logo(project_dir / "assets" / "logo.png", height=int(trimmed.h * 0.10))
-    lower_third = _make_lower_third(trimmed.w, args.url)
-    end_card_landscape = _make_end_card(trimmed.w, trimmed.h, args.headline, args.url)
+        logo = _load_logo(project_dir / "assets" / "logo.png", height=int(trimmed.h * 0.10))
+        lower_third = _make_lower_third(trimmed.w, args.url)
+        end_card_landscape = _make_end_card(trimmed.w, trimmed.h, args.headline, args.url)
 
-    landscape = _composite_landscape(trimmed, logo, lower_third, end_card_landscape, END_CARD_DURATION)
-    landscape.write_videofile(str(branded_dir / "branded_16x9.mp4"), codec="libx264", preset="medium", audio_codec="aac")
+        landscape = _composite_landscape(trimmed, logo, lower_third, end_card_landscape, END_CARD_DURATION)
+        landscape.write_videofile(str(branded_dir / "branded_16x9.mp4"), codec="libx264", preset="medium", audio_codec="aac")
 
-    # Aspect variants. We composite over the landscape (with overlays already
-    # baked in) so the lower-third + logo stay in proportion.
-    portrait_letter = _to_aspect(landscape, 1080, 1920, mode="letterbox")
-    portrait_letter.write_videofile(str(branded_dir / "branded_9x16.mp4"), codec="libx264", preset="medium", audio_codec="aac")
+        # Aspect variants. We composite over the landscape (with overlays already
+        # baked in) so the lower-third + logo stay in proportion.
+        portrait_letter = _to_aspect(landscape, 1080, 1920, mode="letterbox")
+        portrait_letter.write_videofile(str(branded_dir / "branded_9x16.mp4"), codec="libx264", preset="medium", audio_codec="aac")
 
-    portrait_cut = _to_aspect(landscape, 1080, 1920, mode="centercut")
-    portrait_cut.write_videofile(str(branded_dir / "branded_9x16_centercut.mp4"), codec="libx264", preset="medium", audio_codec="aac")
+        portrait_cut = _to_aspect(landscape, 1080, 1920, mode="centercut")
+        portrait_cut.write_videofile(str(branded_dir / "branded_9x16_centercut.mp4"), codec="libx264", preset="medium", audio_codec="aac")
 
-    square = _to_aspect(landscape, 1080, 1080, mode="centercut")
-    square.write_videofile(str(branded_dir / "branded_1x1.mp4"), codec="libx264", preset="medium", audio_codec="aac")
+        square = _to_aspect(landscape, 1080, 1080, mode="centercut")
+        square.write_videofile(str(branded_dir / "branded_1x1.mp4"), codec="libx264", preset="medium", audio_codec="aac")
 
     print(f"Wrote branded variants to {branded_dir}")
 

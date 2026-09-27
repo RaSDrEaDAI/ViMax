@@ -7,7 +7,6 @@ import asyncio
 import time
 from typing import Optional, Dict, List, Tuple, Literal, Union
 from urllib.parse import urlparse
-from moviepy import VideoFileClip, concatenate_videoclips
 from PIL import Image
 from agents import *
 from agents.camera_image_generator import _validate_camera_tree
