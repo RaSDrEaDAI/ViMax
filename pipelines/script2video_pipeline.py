@@ -11,6 +11,7 @@ from moviepy import VideoFileClip, concatenate_videoclips
 from PIL import Image
 from agents import *
 from agents.camera_image_generator import _validate_camera_tree
+from agents.storyboard_artist import validate_char_idxs
 import yaml
 from interfaces import *
 from langchain.chat_models import init_chat_model
@@ -20,6 +21,7 @@ from utils.composite_sheet import build_character_sheet, character_sheet_descrip
 from utils.image import download_image
 from utils.video import concatenate_shot_videos
 from utils.dialogue import build_video_prompt
+from utils.text import safe_path_component
 from utils.reference_slots import (
     assemble_indexed_prompt,
     build_reference_slots,
@@ -766,7 +768,7 @@ class Script2VideoPipeline:
         Skip-if-exists at every step, like every other stage — a re-run after a
         failure resumes rather than re-spending.
         """
-        character_dir = os.path.join(self.working_dir, "character_portraits", f"{character.idx}_{character.identifier_in_scene}")
+        character_dir = os.path.join(self.working_dir, "character_portraits", f"{character.idx}_{safe_path_component(character.identifier_in_scene)}")
         os.makedirs(character_dir, exist_ok=True)
 
         front_portrait_path = os.path.join(character_dir, "front.png")
@@ -1096,6 +1098,10 @@ class Script2VideoPipeline:
         if os.path.exists(shot_description_path):
             with open(shot_description_path, 'r', encoding='utf-8') as f:
                 shot_description = ShotDescription.model_validate(json.load(f))
+            # Same range check a fresh decomposition gets: a resumed run must not
+            # silently pick characters[-1] from an on-disk answer.
+            validate_char_idxs(shot_description.ff_vis_char_idxs, len(characters), "ff_vis_char_idxs")
+            validate_char_idxs(shot_description.lf_vis_char_idxs, len(characters), "lf_vis_char_idxs")
             print(f"🚀 Loaded shot {shot_brief_description.idx} description from existing file.")
         else:
             shot_description = await self.storyboard_artist.decompose_visual_description(

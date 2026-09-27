@@ -11,6 +11,13 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, MagicMock
 
+from agents.reference_image_selector import (
+    RefImageIndicesAndTextPrompt,
+    ReferenceImageSelector,
+    select_pairs_by_indices,
+)
+from agents.storyboard_artist import validate_char_idxs
+from interfaces import CharacterInScene
 from interfaces.camera import Camera
 from interfaces.shot_description import ShotDescription
 from pipelines.script2video_pipeline import (
@@ -18,6 +25,8 @@ from pipelines.script2video_pipeline import (
     _collect_priority_shot_idxs,
     _group_shots_into_cameras,
 )
+from tests.fakes import FakeChatModel
+from utils.text import safe_path_component
 
 
 def _shot(idx, cam_idx, variation_type="small", ff_chars=None, lf_chars=None):
@@ -178,6 +187,108 @@ class TestResumeEqualsFresh(unittest.IsolatedAsyncioTestCase):
 
     async def test_resume_matches_fresh(self):
         self.assertEqual(await self._anchor_for(resume=True), await self._anchor_for(resume=False))
+
+
+class TestCharIdxValidation(unittest.TestCase):
+    def test_valid_indices_pass(self):
+        validate_char_idxs([0, 1], 2, "ff_vis_char_idxs")
+        validate_char_idxs([], 0, "ff_vis_char_idxs")
+
+    def test_out_of_range_rejected(self):
+        with self.assertRaisesRegex(ValueError, r"\[2\]"):
+            validate_char_idxs([0, 2], 2, "ff_vis_char_idxs")
+
+    def test_negative_rejected(self):
+        with self.assertRaisesRegex(ValueError, "lf_vis_char_idxs"):
+            validate_char_idxs([-1], 2, "lf_vis_char_idxs")
+
+
+class TestResumedShotDescriptionIsValidated(unittest.IsolatedAsyncioTestCase):
+    async def test_negative_char_idx_on_disk_raises(self):
+        from interfaces import ShotBriefDescription
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            pipeline = _pipeline(tmp)
+            pipeline.shot_desc_events[0] = asyncio.Event()
+            path = os.path.join(tmp, "shots", "0", "shot_description.json")
+            os.makedirs(os.path.dirname(path))
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(_shot(0, 0, ff_chars=[-1]).model_dump(), f)
+            brief = ShotBriefDescription(
+                idx=0, is_last=True, cam_idx=0, visual_desc="v", audio_desc="a",
+            )
+            character = CharacterInScene(idx=0, identifier_in_scene="Mira", is_visible=True)
+            with self.assertRaisesRegex(ValueError, "ff_vis_char_idxs"):
+                await pipeline.decompose_visual_description_for_single_shot_brief_description(brief, [character])
+
+
+class TestReferenceSelectorIndices(unittest.IsolatedAsyncioTestCase):
+    def test_valid_selection(self):
+        pairs = [("a.png", "a"), ("b.png", "b")]
+        self.assertEqual(select_pairs_by_indices(pairs, [1]), [("b.png", "b")])
+
+    def test_negative_index_rejected(self):
+        with self.assertRaises(ValueError):
+            select_pairs_by_indices([("a.png", "a")], [-1])
+
+    def test_out_of_range_rejected(self):
+        with self.assertRaises(ValueError):
+            select_pairs_by_indices([("a.png", "a")], [3])
+
+    async def test_selector_re_asks_then_fails_loud(self):
+        # text_only path (the fork's third index site): [-1] used to return the
+        # LAST image silently. Now each bad answer re-asks, bounded at 3.
+        bad = RefImageIndicesAndTextPrompt(ref_image_indices=[-1], text_prompt="p")
+        model = FakeChatModel([bad])
+        selector = ReferenceImageSelector(chat_model=model, text_only=True)
+        with self.assertRaises(Exception) as ctx:
+            await selector.select_reference_images_and_generate_prompt(
+                available_image_path_and_text_pairs=[("a.png", "a"), ("b.png", "b")],
+                frame_description="f",
+            )
+        self.assertEqual(model.calls, 3)
+        self.assertIn("out of range", repr(ctx.exception.last_attempt.exception()))
+
+    async def test_selector_recovers_on_good_second_answer(self):
+        bad = RefImageIndicesAndTextPrompt(ref_image_indices=[5], text_prompt="p")
+        good = RefImageIndicesAndTextPrompt(ref_image_indices=[1], text_prompt="p2")
+        selector = ReferenceImageSelector(chat_model=FakeChatModel([bad, good]), text_only=True)
+        out = await selector.select_reference_images_and_generate_prompt(
+            available_image_path_and_text_pairs=[("a.png", "a"), ("b.png", "b")],
+            frame_description="f",
+        )
+        self.assertEqual(out["reference_image_path_and_text_pairs"], [("b.png", "b")])
+
+
+class TestSafePathComponent(unittest.TestCase):
+    def test_clean_names_unchanged(self):
+        for name in ("Alice", "Bob_2", "Marella Lewis", "Dr. Chen", "Jean-Luc"):
+            self.assertEqual(safe_path_component(name), name)
+
+    def test_recorded_run_names_unchanged(self):
+        # Real character dirs from .working_dir — must keep resolving on resume.
+        for name in ("The Wednesday Chef (Marion)", "Contestant Three (Marla)", "O'Brien"):
+            self.assertEqual(safe_path_component(name), name)
+
+    def test_unicode_names_preserved(self):
+        self.assertEqual(safe_path_component("李雷"), "李雷")
+
+    def test_path_separators_removed(self):
+        for name in ("a/b", "a\\b", "../Mira/Chen", "C:\\x"):
+            cleaned = safe_path_component(name)
+            self.assertNotIn("/", cleaned)
+            self.assertNotIn("\\", cleaned)
+            self.assertNotIn(":", cleaned)
+        self.assertEqual(safe_path_component("../Mira/Chen"), "_Mira_Chen")
+
+    def test_traversal_neutralized(self):
+        cleaned = safe_path_component("../../etc/passwd")
+        self.assertNotIn("/", cleaned)
+        self.assertFalse(cleaned.startswith("."))
+
+    def test_empty_becomes_placeholder(self):
+        self.assertEqual(safe_path_component(""), "unnamed")
+        self.assertEqual(safe_path_component("..."), "unnamed")
 
 
 if __name__ == "__main__":

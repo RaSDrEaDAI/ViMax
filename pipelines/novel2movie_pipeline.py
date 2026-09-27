@@ -18,6 +18,7 @@ from components.scene import Scene
 from components.character import CharacterInScene, CharacterInNovel, CharacterInEvent
 from pipelines.base import BasePipeline
 from tenacity import retry
+from utils.text import safe_path_component
 
 class Novel2MoviePipeline(BasePipeline):
 
@@ -401,7 +402,7 @@ class Novel2MoviePipeline(BasePipeline):
 
         async def generate_portrait_for_character(sem, character: CharacterInNovel):
             async with sem:
-                image_path = os.path.join(base_character_portrait_dir, f"character_{character.index}_{character.identifier_in_novel}.png")
+                image_path = os.path.join(base_character_portrait_dir, f"character_{character.index}_{safe_path_component(character.identifier_in_novel)}.png")
                 
                 if os.path.exists(image_path):
                     print(f"⏭️ Skipping portrait generation for character {character.index} as it already exists.")
@@ -444,7 +445,7 @@ class Novel2MoviePipeline(BasePipeline):
                     working_dir_character_portrait,
                     f"event_{event_idx}",
                     f"scene_{scene_idx}",
-                    f"character_{character.index}_{character.identifier_in_scene}.png",
+                    f"character_{character.index}_{safe_path_component(character.identifier_in_scene)}.png",
                 )
                 os.makedirs(os.path.dirname(image_path), exist_ok=True)
 
@@ -482,7 +483,7 @@ class Novel2MoviePipeline(BasePipeline):
         sem = asyncio.Semaphore(3)
         tasks = []
         for character in characters_in_novel:
-            character_base_image_path = os.path.join(base_character_portrait_dir, f"character_{character.index}_{character.identifier_in_novel}.png")
+            character_base_image_path = os.path.join(base_character_portrait_dir, f"character_{character.index}_{safe_path_component(character.identifier_in_novel)}.png")
             for event_idx, identifier_in_event in character.active_events.items():
                 characters_in_event: List[CharacterInEvent] = event_idx_to_characters_in_event[event_idx]
                 character_in_event = [char for char in characters_in_event if char.identifier_in_event == identifier_in_event][0]  # TODO: 这里的数据结构没有做好，居然还要遍历查找。。。
@@ -527,7 +528,7 @@ class Novel2MoviePipeline(BasePipeline):
                                 working_dir_character_portrait,
                                 f"event_{event.index}",
                                 f"scene_{scene.idx}",
-                                f"character_{character.index}_{character.identifier_in_scene}.png",
+                                f"character_{character.index}_{safe_path_component(character.identifier_in_scene)}.png",
                             ),
                             "description": f"A portrait of {character.identifier_in_scene}",
                         }

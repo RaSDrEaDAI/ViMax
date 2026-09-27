@@ -13,6 +13,7 @@ from tools.render_backend import RenderBackend, _load_dotenv, _substitute_env_va
 from utils.provider_presets import resolve_chat_model_config
 from utils.composite_sheet import build_character_sheet, character_sheet_description
 from utils.video import concatenate_shot_videos
+from utils.text import safe_path_component
 
 
 class Idea2VideoPipeline:
@@ -182,7 +183,7 @@ class Idea2VideoPipeline:
         style: str,
     ):
         character_dir = os.path.join(
-            self.working_dir, "character_portraits", f"{character.idx}_{character.identifier_in_scene}")
+            self.working_dir, "character_portraits", f"{character.idx}_{safe_path_component(character.identifier_in_scene)}")
         os.makedirs(character_dir, exist_ok=True)
 
         # Same composite-sheet chain as Script2VideoPipeline. It has to match:

@@ -188,9 +188,9 @@ class ReferenceImageSelector:
         # Text-only path: one pass on descriptions alone. No multimodal call.
         if self.text_only:
             response = await self._run_text_only(available_image_path_and_text_pairs, frame_description)
-            reference_image_path_and_text_pairs = [
-                available_image_path_and_text_pairs[i] for i in response.ref_image_indices
-            ]
+            reference_image_path_and_text_pairs = select_pairs_by_indices(
+                available_image_path_and_text_pairs, response.ref_image_indices,
+            )
             return {
                 "reference_image_path_and_text_pairs": reference_image_path_and_text_pairs,
                 "text_prompt": response.text_prompt,
@@ -202,7 +202,7 @@ class ReferenceImageSelector:
         if len(available_image_path_and_text_pairs) >= 8:
             try:
                 ref = await self._run_text_only(available_image_path_and_text_pairs, frame_description)
-                filtered_image_path_and_text_pairs = [available_image_path_and_text_pairs[i] for i in ref.ref_image_indices]
+                filtered_image_path_and_text_pairs = select_pairs_by_indices(available_image_path_and_text_pairs, ref.ref_image_indices)
                 logging.info(f"Filtered image idx:{ref.ref_image_indices}")
             except Exception as e:
                 logging.error(f"Error get image prompt: \n{e}")
@@ -235,7 +235,7 @@ class ReferenceImageSelector:
 
         try:
             response = await structured_model.ainvoke(messages)
-            reference_image_path_and_text_pairs = [filtered_image_path_and_text_pairs[i] for i in response.ref_image_indices]
+            reference_image_path_and_text_pairs = select_pairs_by_indices(filtered_image_path_and_text_pairs, response.ref_image_indices)
             return {
                 "reference_image_path_and_text_pairs": reference_image_path_and_text_pairs,
                 "text_prompt": response.text_prompt,
@@ -246,3 +246,14 @@ class ReferenceImageSelector:
             raise e
 
 
+def select_pairs_by_indices(pairs, indices):
+    """Index into pairs with LLM-emitted indices, rejecting out-of-range values.
+
+    Negative indices would silently select the wrong image via Python indexing.
+    Called inside the bounded @retry, so a bad answer re-asks. Port of
+    hkuds/vimax df1480d (plus the fork's text_only path).
+    """
+    invalid = [i for i in indices if i < 0 or i >= len(pairs)]
+    if invalid:
+        raise ValueError(f"ref_image_indices out of range: {invalid} (have {len(pairs)} images)")
+    return [pairs[i] for i in indices]
